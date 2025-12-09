@@ -1,63 +1,58 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title Bribe
  * @author heesho
- *
- * @notice Distributes voting rewards to GovernanceToken holders who vote for
- *         a specific strategy on the Voter contract.
- *
- * @dev Key concepts:
- *      - Virtual Balances: No tokens are deposited. When users vote in Voter,
- *        the Voter calls _deposit() to create a virtual balance here.
- *      - Time-based Distribution: Rewards stream linearly over 7 days
- *      - Multiple Reward Tokens: Can distribute multiple token types simultaneously
- *
- * Reward Flow:
- * 1. Strategy sells revenue tokens, portion of payment goes to BribeRouter
- * 2. BribeRouter calls notifyRewardAmount() to start reward distribution
- * 3. Rewards stream to voters over 7 days based on their virtual balance
- * 4. Voters call getReward() to claim accumulated rewards
- *
- * Invariants:
- *   - Bribe.balanceOf(account) == Voter.votes(account, strategy)
- *   - Bribe.totalSupply() == Voter.weights(strategy)
- *
- * @dev Based on Synthetix StakingRewards pattern, modified for virtual balances
+ * @notice Distributes voting rewards to GovernanceToken holders who vote for a specific strategy.
+ *         Uses virtual balances (no token deposits) - Voter calls _deposit/_withdraw when users vote.
+ *         Rewards stream linearly over 7 days based on virtual balance share.
+ * @dev Based on Synthetix StakingRewards pattern, modified for virtual balances.
  */
 contract Bribe is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    /*----------  CONSTANTS  --------------------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice Duration over which rewards are distributed
-    uint256 public constant DURATION = 7 days;
+    uint256 public constant DURATION = 7 days;  // reward distribution period
 
-    /*----------  STATE VARIABLES  --------------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                                IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    address public immutable voter;  // only voter can modify balances
+
+    /*//////////////////////////////////////////////////////////////
+                                STATE
+    //////////////////////////////////////////////////////////////*/
 
     struct Reward {
-        uint256 periodFinish;
-        uint256 rewardRate;
-        uint256 lastUpdateTime;
-        uint256 rewardPerTokenStored;
+        uint256 periodFinish;           // when current reward period ends
+        uint256 rewardRate;             // tokens per second
+        uint256 lastUpdateTime;         // last time rewards were calculated
+        uint256 rewardPerTokenStored;   // accumulated rewards per token
     }
 
-    mapping(address => Reward) public token_RewardData;
-    mapping(address => bool) public token_IsReward;
-    address[] public rewardTokens;
-    address public immutable voter;
-    mapping(address => mapping(address => uint256)) public account_Token_RewardPerTokenPaid;
-    mapping(address => mapping(address => uint256)) public account_Token_Rewards;
-    uint256 private _totalSupply;
-    mapping(address => uint256) private account_Balance;
+    mapping(address => Reward) public token_RewardData;     // token => reward state
+    mapping(address => bool) public token_IsReward;         // token => is valid reward
+    address[] public rewardTokens;                          // list of reward tokens
 
-    /*----------  ERRORS ------------------------------------------------*/
+    mapping(address => mapping(address => uint256)) public account_Token_RewardPerTokenPaid; // account => token => paid
+    mapping(address => mapping(address => uint256)) public account_Token_Rewards;           // account => token => owed
+
+    uint256 public totalSupply;                              // total virtual balance
+    mapping(address => uint256) public account_Balance;     // account => virtual balance
+
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     error Bribe__NotAuthorizedVoter();
     error Bribe__RewardSmallerThanDuration();
@@ -66,7 +61,9 @@ contract Bribe is ReentrancyGuard {
     error Bribe__RewardTokenAlreadyAdded();
     error Bribe__InvalidZeroInput();
 
-    /*----------  EVENTS ------------------------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     event Bribe__RewardAdded(address indexed rewardToken);
     event Bribe__RewardNotified(address indexed rewardToken, uint256 reward);
@@ -74,8 +71,11 @@ contract Bribe is ReentrancyGuard {
     event Bribe__Withdrawn(address indexed user, uint256 amount);
     event Bribe__RewardPaid(address indexed user, address indexed rewardsToken, uint256 reward);
 
-    /*----------  MODIFIERS  --------------------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                                MODIFIERS
+    //////////////////////////////////////////////////////////////*/
 
+    /// @dev Updates reward state for all tokens before function execution
     modifier updateReward(address account) {
         for (uint256 i; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
@@ -89,10 +89,7 @@ contract Bribe is ReentrancyGuard {
         _;
     }
 
-    /**
-     * @notice Restricts function to Voter contract only
-     * @dev Only Voter can modify virtual balances and add reward tokens
-     */
+    /// @dev Restricts to Voter contract only
     modifier onlyVoter() {
         if (msg.sender != voter) {
             revert Bribe__NotAuthorizedVoter();
@@ -105,18 +102,19 @@ contract Bribe is ReentrancyGuard {
         _;
     }
 
-    /*----------  CONSTRUCTOR  ------------------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Initialize Bribe contract
-     * @param _voter The Voter contract address that will control this Bribe
-     */
     constructor(address _voter) {
         voter = _voter;
     }
 
-    /*----------  EXTERNAL FUNCTIONS  -----------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                          EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
+    /// @notice Claims all accumulated rewards for caller
     function getReward(address account) external nonReentrant updateReward(account) {
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address _rewardsToken = rewardTokens[i];
@@ -129,6 +127,9 @@ contract Bribe is ReentrancyGuard {
         }
     }
 
+    /// @notice Starts a new reward distribution period
+    /// @param _rewardsToken Token to distribute
+    /// @param reward Amount to distribute over DURATION
     function notifyRewardAmount(address _rewardsToken, uint256 reward) external nonReentrant updateReward(address(0)) {
         if (reward < DURATION) revert Bribe__RewardSmallerThanDuration();
         if (reward < left(_rewardsToken)) revert Bribe__RewardSmallerThanLeft();
@@ -139,6 +140,7 @@ contract Bribe is ReentrancyGuard {
         if (block.timestamp >= token_RewardData[_rewardsToken].periodFinish) {
             token_RewardData[_rewardsToken].rewardRate = reward / DURATION;
         } else {
+            // add leftover from current period
             uint256 remaining = token_RewardData[_rewardsToken].periodFinish - block.timestamp;
             uint256 leftover = remaining * token_RewardData[_rewardsToken].rewardRate;
             token_RewardData[_rewardsToken].rewardRate = (reward + leftover) / DURATION;
@@ -150,20 +152,25 @@ contract Bribe is ReentrancyGuard {
         emit Bribe__RewardNotified(_rewardsToken, reward);
     }
 
-    /*----------  RESTRICTED FUNCTIONS (VOTER ONLY)  --------------------*/
+    /*//////////////////////////////////////////////////////////////
+                    RESTRICTED FUNCTIONS (VOTER ONLY)
+    //////////////////////////////////////////////////////////////*/
 
+    /// @notice Creates virtual balance when user votes
     function _deposit(uint256 amount, address account) external onlyVoter nonZeroInput(amount) updateReward(account) {
-        _totalSupply = _totalSupply + amount;
+        totalSupply = totalSupply + amount;
         account_Balance[account] = account_Balance[account] + amount;
         emit Bribe__Deposited(account, amount);
     }
 
+    /// @notice Removes virtual balance when user resets votes
     function _withdraw(uint256 amount, address account) external onlyVoter nonZeroInput(amount) updateReward(account) {
-        _totalSupply = _totalSupply - amount;
+        totalSupply = totalSupply - amount;
         account_Balance[account] = account_Balance[account] - amount;
         emit Bribe__Withdrawn(account, amount);
     }
 
+    /// @notice Adds a new reward token
     function addReward(address _rewardsToken) external onlyVoter {
         if (token_IsReward[_rewardsToken]) revert Bribe__RewardTokenAlreadyAdded();
         token_IsReward[_rewardsToken] = true;
@@ -171,35 +178,33 @@ contract Bribe is ReentrancyGuard {
         emit Bribe__RewardAdded(_rewardsToken);
     }
 
-    /*----------  VIEW FUNCTIONS  ---------------------------------------*/
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
+    /// @notice Returns remaining rewards to distribute for a token
     function left(address _rewardsToken) public view returns (uint256) {
         if (block.timestamp >= token_RewardData[_rewardsToken].periodFinish) return 0;
         uint256 remaining = token_RewardData[_rewardsToken].periodFinish - block.timestamp;
         return remaining * token_RewardData[_rewardsToken].rewardRate;
     }
 
-    function totalSupply() external view returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(address account) external view returns (uint256) {
-        return account_Balance[account];
-    }
-
+    /// @notice Returns min of current time and period end
     function lastTimeRewardApplicable(address _rewardsToken) public view returns (uint256) {
         return Math.min(block.timestamp, token_RewardData[_rewardsToken].periodFinish);
     }
 
+    /// @notice Returns accumulated rewards per token
     function rewardPerToken(address _rewardsToken) public view returns (uint256) {
-        if (_totalSupply == 0) return token_RewardData[_rewardsToken].rewardPerTokenStored;
+        if (totalSupply == 0) return token_RewardData[_rewardsToken].rewardPerTokenStored;
         return token_RewardData[_rewardsToken].rewardPerTokenStored
             + (
                 (lastTimeRewardApplicable(_rewardsToken) - token_RewardData[_rewardsToken].lastUpdateTime)
-                    * token_RewardData[_rewardsToken].rewardRate * 1e18 / _totalSupply
+                    * token_RewardData[_rewardsToken].rewardRate * 1e18 / totalSupply
             );
     }
 
+    /// @notice Returns rewards earned by account for a token
     function earned(address account, address _rewardsToken) public view returns (uint256) {
         return (
             account_Balance[account]
@@ -207,10 +212,12 @@ contract Bribe is ReentrancyGuard {
         ) + account_Token_Rewards[account][_rewardsToken];
     }
 
+    /// @notice Returns total rewards for full duration
     function getRewardForDuration(address _rewardsToken) external view returns (uint256) {
         return token_RewardData[_rewardsToken].rewardRate * DURATION;
     }
 
+    /// @notice Returns all reward token addresses
     function getRewardTokens() external view returns (address[] memory) {
         return rewardTokens;
     }

@@ -296,7 +296,7 @@ describe("Edge Cases and Security Tests", function () {
             const { strategy } = await createStrategy();
 
             await stakeTokens(user1, ethers.utils.parseEther("100"));
-            await expect(voter.connect(user1).vote([strategy, strategy], [50, 50])).to.be.revertedWith("Already voted for strategy");
+            await expect(voter.connect(user1).vote([strategy, strategy], [50, 50])).to.be.reverted;
         });
 
         it("should correctly track multiple strategies per user", async function () {

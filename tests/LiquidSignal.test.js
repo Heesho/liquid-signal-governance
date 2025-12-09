@@ -234,7 +234,7 @@ describe("Liquid Signal Governance", function () {
 
             const Bribe = await ethers.getContractFactory("Bribe");
             const bribeContract = Bribe.attach(bribe);
-            expect(await bribeContract.balanceOf(user1.address)).to.equal(amount);
+            expect(await bribeContract.account_Balance(user1.address)).to.equal(amount);
         });
     });
 

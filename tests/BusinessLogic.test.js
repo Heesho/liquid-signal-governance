@@ -710,23 +710,23 @@ describe("Business Logic Tests", function () {
 
             // Vote for s1
             await voter.connect(user1).vote([s1], [100]);
-            expect(await bribe1.balanceOf(user1.address)).to.equal(ethers.utils.parseEther("100"));
-            expect(await bribe2.balanceOf(user1.address)).to.equal(0);
+            expect(await bribe1.account_Balance(user1.address)).to.equal(ethers.utils.parseEther("100"));
+            expect(await bribe2.account_Balance(user1.address)).to.equal(0);
             expect(await bribe1.totalSupply()).to.equal(ethers.utils.parseEther("100"));
 
             // Switch to s2
             await advanceTime(WEEK);
             await voter.connect(user1).vote([s2], [100]);
-            expect(await bribe1.balanceOf(user1.address)).to.equal(0);
-            expect(await bribe2.balanceOf(user1.address)).to.equal(ethers.utils.parseEther("100"));
+            expect(await bribe1.account_Balance(user1.address)).to.equal(0);
+            expect(await bribe2.account_Balance(user1.address)).to.equal(ethers.utils.parseEther("100"));
             expect(await bribe1.totalSupply()).to.equal(0);
             expect(await bribe2.totalSupply()).to.equal(ethers.utils.parseEther("100"));
 
             // Split between both
             await advanceTime(WEEK);
             await voter.connect(user1).vote([s1, s2], [50, 50]);
-            expect(await bribe1.balanceOf(user1.address)).to.equal(ethers.utils.parseEther("50"));
-            expect(await bribe2.balanceOf(user1.address)).to.equal(ethers.utils.parseEther("50"));
+            expect(await bribe1.account_Balance(user1.address)).to.equal(ethers.utils.parseEther("50"));
+            expect(await bribe2.account_Balance(user1.address)).to.equal(ethers.utils.parseEther("50"));
         });
     });
 

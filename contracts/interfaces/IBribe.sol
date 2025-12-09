@@ -12,7 +12,7 @@ interface IBribe {
 
     function left(address rewardsToken) external view returns (uint256);
     function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
+    function account_Balance(address account) external view returns (uint256);
     function earned(address account, address rewardsToken) external view returns (uint256);
     function getRewardForDuration(address rewardsToken) external view returns (uint256);
     function getRewardTokens() external view returns (address[] memory);

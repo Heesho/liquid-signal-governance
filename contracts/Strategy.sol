@@ -1,43 +1,60 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./interfaces/IVoter.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IVoter} from "./interfaces/IVoter.sol";
 
 /**
  * @title Strategy
  * @author heesho
- * @notice Dutch auction selling revenue tokens. Price decays linearly from initPrice to 0.
+ * @notice Dutch auction selling revenue tokens. Price decays linearly from initPrice to 0 over epochPeriod.
+ *         When bought, price resets to (paymentAmount * priceMultiplier), bounded by [minInitPrice, ABS_MAX_INIT_PRICE].
  */
 contract Strategy {
     using SafeERC20 for IERC20;
 
-    uint256 public constant MIN_EPOCH_PERIOD = 1 hours;
-    uint256 public constant MAX_EPOCH_PERIOD = 365 days;
-    uint256 public constant MIN_PRICE_MULTIPLIER = 1.1e18;
-    uint256 public constant MAX_PRICE_MULTIPLIER = 3e18;
-    uint256 public constant ABS_MIN_INIT_PRICE = 1e6;
-    uint256 public constant ABS_MAX_INIT_PRICE = type(uint192).max;
-    uint256 public constant PRICE_MULTIPLIER_SCALE = 1e18;
-    uint256 public constant DIVISOR = 10000;
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
-    address public immutable voter;
-    IERC20 public immutable revenueToken;
-    IERC20 public immutable paymentToken;
-    address public immutable paymentReceiver;
-    uint256 public immutable epochPeriod;
-    uint256 public immutable priceMultiplier;
-    uint256 public immutable minInitPrice;
+    uint256 public constant MIN_EPOCH_PERIOD = 1 hours;          // min auction duration
+    uint256 public constant MAX_EPOCH_PERIOD = 365 days;         // max auction duration
+    uint256 public constant MIN_PRICE_MULTIPLIER = 1.1e18;       // min 1.1x price increase
+    uint256 public constant MAX_PRICE_MULTIPLIER = 3e18;         // max 3x price increase
+    uint256 public constant ABS_MIN_INIT_PRICE = 1e6;            // absolute min starting price
+    uint256 public constant ABS_MAX_INIT_PRICE = type(uint192).max; // absolute max starting price
+    uint256 public constant PRICE_MULTIPLIER_SCALE = 1e18;       // scale for price multiplier
+    uint256 public constant DIVISOR = 10000;                     // basis points divisor
+
+    /*//////////////////////////////////////////////////////////////
+                                IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    address public immutable voter;           // voter contract for bribe split
+    IERC20 public immutable revenueToken;     // token being auctioned
+    IERC20 public immutable paymentToken;     // token used to pay
+    address public immutable paymentReceiver; // receives payment (minus bribe split)
+    uint256 public immutable epochPeriod;     // duration of price decay
+    uint256 public immutable priceMultiplier; // multiplier for next epoch's init price
+    uint256 public immutable minInitPrice;    // floor for init price
+
+    /*//////////////////////////////////////////////////////////////
+                                STATE
+    //////////////////////////////////////////////////////////////*/
 
     struct Slot0 {
-        uint8 locked; // 1=unlocked, 2=locked
-        uint16 epochId; // frontrun protection
-        uint192 initPrice;
-        uint40 startTime;
+        uint8 locked;       // 1=unlocked, 2=locked (reentrancy)
+        uint16 epochId;     // increments each buy (frontrun protection)
+        uint192 initPrice;  // starting price for current epoch
+        uint40 startTime;   // epoch start timestamp
     }
 
     Slot0 internal slot0;
+
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     error Strategy__DeadlinePassed();
     error Strategy__EpochIdMismatch();
@@ -54,9 +71,17 @@ contract Strategy {
     error Strategy__MinInitPriceExceedsAbsMaxInitPrice();
     error Strategy__PaymentReceiverIsThis();
 
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event Strategy__Buy(
         address indexed buyer, address indexed assetsReceiver, uint256 revenueAmount, uint256 paymentAmount
     );
+
+    /*//////////////////////////////////////////////////////////////
+                                MODIFIERS
+    //////////////////////////////////////////////////////////////*/
 
     modifier nonReentrant() {
         if (slot0.locked == 2) revert Strategy__Reentrancy();
@@ -69,6 +94,10 @@ contract Strategy {
         if (slot0.locked == 2) revert Strategy__Reentrancy();
         _;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(
         address _voter,
@@ -103,6 +132,16 @@ contract Strategy {
         slot0.locked = 1;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            AUCTION FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Buys all revenue tokens at current dutch auction price
+    /// @param assetsReceiver Address to receive revenue tokens
+    /// @param epochId Must match current epochId (frontrun protection)
+    /// @param deadline Transaction must execute before this timestamp
+    /// @param maxPaymentAmount Maximum payment willing to make (slippage protection)
+    /// @return paymentAmount Actual payment amount
     function buy(address assetsReceiver, uint256 epochId, uint256 deadline, uint256 maxPaymentAmount)
         external
         nonReentrant
@@ -122,6 +161,7 @@ contract Strategy {
         if (paymentAmount > 0) {
             paymentToken.safeTransferFrom(msg.sender, address(this), paymentAmount);
 
+            // split payment between bribe and receiver
             uint256 bribeSplit = IVoter(voter).bribeSplit();
             uint256 bribeAmount = paymentAmount * bribeSplit / DIVISOR;
             uint256 receiverAmount = paymentAmount - bribeAmount;
@@ -136,10 +176,12 @@ contract Strategy {
 
         revenueToken.safeTransfer(assetsReceiver, revenueBalance);
 
+        // calculate next epoch's init price
         uint256 newInitPrice = paymentAmount * priceMultiplier / PRICE_MULTIPLIER_SCALE;
         if (newInitPrice > ABS_MAX_INIT_PRICE) newInitPrice = ABS_MAX_INIT_PRICE;
         else if (newInitPrice < minInitPrice) newInitPrice = minInitPrice;
 
+        // advance epoch
         unchecked {
             slot0Cache.epochId++;
         }
@@ -150,24 +192,37 @@ contract Strategy {
         emit Strategy__Buy(msg.sender, assetsReceiver, revenueBalance, paymentAmount);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                          INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Calculates current price based on linear decay from initPrice to 0
     function getPriceFromCache(Slot0 memory slot0Cache) internal view returns (uint256) {
         uint256 timePassed = block.timestamp - slot0Cache.startTime;
         if (timePassed > epochPeriod) return 0;
         return slot0Cache.initPrice - slot0Cache.initPrice * timePassed / epochPeriod;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns current auction price
     function getPrice() external view nonReentrantView returns (uint256) {
         return getPriceFromCache(slot0);
     }
 
+    /// @notice Returns current slot0 state
     function getSlot0() external view nonReentrantView returns (Slot0 memory) {
         return slot0;
     }
 
+    /// @notice Returns revenue token balance available for purchase
     function getRevenueBalance() external view returns (uint256) {
         return revenueToken.balanceOf(address(this));
     }
 
+    /// @notice Returns the bribe router for this strategy
     function getBribeRouter() external view returns (address) {
         return IVoter(voter).strategy_BribeRouter(address(this));
     }

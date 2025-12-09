@@ -725,7 +725,7 @@ describe("System-Wide Tests", function () {
             await voter.connect(user1).vote([strategy], [100]);
 
             const bribeContract = await ethers.getContractAt("Bribe", bribe);
-            expect(await bribeContract.balanceOf(user1.address))
+            expect(await bribeContract.account_Balance(user1.address))
                 .to.equal(await voter.account_Strategy_Votes(user1.address, strategy));
         });
     });
