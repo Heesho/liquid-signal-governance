@@ -56,7 +56,14 @@ contract Voter is ReentrancyGuard, Ownable {
     error Voter__NotStrategy();
     error Voter__BribeSplitExceedsMax();
 
-    event Voter__StrategyAdded(address indexed creator, address indexed strategy, address bribe, address bribeRouter, address paymentToken, address paymentReceiver);
+    event Voter__StrategyAdded(
+        address indexed creator,
+        address indexed strategy,
+        address bribe,
+        address bribeRouter,
+        address paymentToken,
+        address paymentReceiver
+    );
     event Voter__StrategyKilled(address indexed strategy);
     event Voter__Voted(address indexed voter, address indexed strategy, uint256 weight);
     event Voter__Abstained(address indexed account, address indexed strategy, uint256 weight);
@@ -67,7 +74,9 @@ contract Voter is ReentrancyGuard, Ownable {
     event Voter__BribeSplitSet(uint256 bribeSplit);
 
     modifier onlyNewEpoch(address account) {
-        if ((block.timestamp / DURATION) * DURATION <= account_LastVoted[account]) revert Voter__AlreadyVotedThisEpoch();
+        if ((block.timestamp / DURATION) * DURATION <= account_LastVoted[account]) {
+            revert Voter__AlreadyVotedThisEpoch();
+        }
         _;
     }
 
@@ -102,7 +111,9 @@ contract Voter is ReentrancyGuard, Ownable {
     }
 
     function claimBribes(address[] memory _bribes) external {
-        for (uint256 i = 0; i < _bribes.length; i++) IBribe(_bribes[i]).getReward(msg.sender);
+        for (uint256 i = 0; i < _bribes.length; i++) {
+            IBribe(_bribes[i]).getReward(msg.sender);
+        }
     }
 
     function notifyAndDistribute(uint256 amount) external {
@@ -128,22 +139,34 @@ contract Voter is ReentrancyGuard, Ownable {
     }
 
     function distribute(uint256 start, uint256 finish) public {
-        for (uint256 x = start; x < finish; x++) distribute(strategies[x]);
+        for (uint256 x = start; x < finish; x++) {
+            distribute(strategies[x]);
+        }
     }
 
-    function distro() external { distribute(0, strategies.length); }
+    function distro() external {
+        distribute(0, strategies.length);
+    }
 
     function updateFor(address[] memory _strategies) external {
-        for (uint256 i = 0; i < _strategies.length; i++) _updateFor(_strategies[i]);
+        for (uint256 i = 0; i < _strategies.length; i++) {
+            _updateFor(_strategies[i]);
+        }
     }
 
     function updateForRange(uint256 start, uint256 end) public {
-        for (uint256 i = start; i < end; i++) _updateFor(strategies[i]);
+        for (uint256 i = start; i < end; i++) {
+            _updateFor(strategies[i]);
+        }
     }
 
-    function updateAll() external { updateForRange(0, strategies.length); }
+    function updateAll() external {
+        updateForRange(0, strategies.length);
+    }
 
-    function updateStrategy(address _strategy) external { _updateFor(_strategy); }
+    function updateStrategy(address _strategy) external {
+        _updateFor(_strategy);
+    }
 
     function setRevenueSource(address _revenueSource) external onlyOwner nonZeroAddress(_revenueSource) {
         revenueSource = _revenueSource;
@@ -168,8 +191,14 @@ contract Voter is ReentrancyGuard, Ownable {
         IBribe(bribe).addReward(_paymentToken);
 
         (strategy, bribeRouter) = IStrategyFactory(strategyFactory).createStrategy(
-            address(this), revenueToken, _paymentToken, _paymentReceiver,
-            _initPrice, _epochPeriod, _priceMultiplier, _minInitPrice
+            address(this),
+            revenueToken,
+            _paymentToken,
+            _paymentReceiver,
+            _initPrice,
+            _epochPeriod,
+            _priceMultiplier,
+            _minInitPrice
         );
 
         if (strategy_IsValid[strategy]) revert Voter__StrategyExists();
@@ -231,7 +260,9 @@ contract Voter is ReentrancyGuard, Ownable {
                 _updateFor(_strategy);
                 strategy_Weight[_strategy] -= _votes;
                 account_Strategy_Votes[account][_strategy] = 0;
-                IBribe(strategy_Bribe[_strategy])._withdraw(IBribe(strategy_Bribe[_strategy]).balanceOf(account), account);
+                IBribe(strategy_Bribe[_strategy])._withdraw(
+                    IBribe(strategy_Bribe[_strategy]).balanceOf(account), account
+                );
                 _totalWeight += _votes;
                 emit Voter__Abstained(account, _strategy, _votes);
             }
@@ -295,7 +326,15 @@ contract Voter is ReentrancyGuard, Ownable {
         }
     }
 
-    function getStrategies() external view returns (address[] memory) { return strategies; }
-    function length() external view returns (uint256) { return strategies.length; }
-    function getStrategyVote(address account) external view returns (address[] memory) { return account_StrategyVote[account]; }
+    function getStrategies() external view returns (address[] memory) {
+        return strategies;
+    }
+
+    function length() external view returns (uint256) {
+        return strategies.length;
+    }
+
+    function getStrategyVote(address account) external view returns (address[] memory) {
+        return account_StrategyVote[account];
+    }
 }

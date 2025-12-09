@@ -22,12 +22,9 @@ interface IStrategy {
     function getRevenueBalance() external view returns (uint256);
     function getBribeRouter() external view returns (address);
 
-    function buy(
-        address assetsReceiver,
-        uint256 epochId,
-        uint256 deadline,
-        uint256 maxPaymentAmount
-    ) external returns (uint256 paymentAmount);
+    function buy(address assetsReceiver, uint256 epochId, uint256 deadline, uint256 maxPaymentAmount)
+        external
+        returns (uint256 paymentAmount);
 
     function MIN_EPOCH_PERIOD() external pure returns (uint256);
     function MAX_EPOCH_PERIOD() external pure returns (uint256);

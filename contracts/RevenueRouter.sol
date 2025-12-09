@@ -46,5 +46,7 @@ contract RevenueRouter is ReentrancyGuard {
         }
     }
 
-    function pendingRevenue() external view returns (uint256) { return IERC20(revenueToken).balanceOf(address(this)); }
+    function pendingRevenue() external view returns (uint256) {
+        return IERC20(revenueToken).balanceOf(address(this));
+    }
 }

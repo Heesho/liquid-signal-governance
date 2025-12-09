@@ -38,5 +38,7 @@ contract BribeRouter {
         }
     }
 
-    function getBribe() external view returns (address) { return IVoter(voter).strategy_Bribe(strategy); }
+    function getBribe() external view returns (address) {
+        return IVoter(voter).strategy_Bribe(strategy);
+    }
 }

@@ -59,5 +59,7 @@ contract GovernanceToken is ERC20, ReentrancyGuard, Ownable {
         if (from != address(0) && to != address(0)) revert GovernanceToken__TransferDisabled();
     }
 
-    function underlying() external view returns (address) { return token; }
+    function underlying() external view returns (address) {
+        return token;
+    }
 }

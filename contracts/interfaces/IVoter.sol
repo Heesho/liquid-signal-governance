@@ -36,7 +36,14 @@ interface IVoter {
     function updateStrategy(address strategy) external;
     function setRevenueSource(address source) external;
     function setBribeSplit(uint256 bribeSplit) external;
-    function addStrategy(address paymentToken, address paymentReceiver, uint256 initPrice, uint256 epochPeriod, uint256 priceMultiplier, uint256 minInitPrice) external returns (address strategy, address bribe, address bribeRouter);
+    function addStrategy(
+        address paymentToken,
+        address paymentReceiver,
+        uint256 initPrice,
+        uint256 epochPeriod,
+        uint256 priceMultiplier,
+        uint256 minInitPrice
+    ) external returns (address strategy, address bribe, address bribeRouter);
     function killStrategy(address strategy) external;
     function addBribeReward(address bribe, address rewardToken) external;
     function getStrategies() external view returns (address[] memory);

@@ -31,8 +31,8 @@ contract Strategy {
     uint256 public immutable minInitPrice;
 
     struct Slot0 {
-        uint8 locked;      // 1=unlocked, 2=locked
-        uint16 epochId;    // frontrun protection
+        uint8 locked; // 1=unlocked, 2=locked
+        uint16 epochId; // frontrun protection
         uint192 initPrice;
         uint40 startTime;
     }
@@ -54,7 +54,9 @@ contract Strategy {
     error Strategy__MinInitPriceExceedsAbsMaxInitPrice();
     error Strategy__PaymentReceiverIsThis();
 
-    event Strategy__Buy(address indexed buyer, address indexed assetsReceiver, uint256 revenueAmount, uint256 paymentAmount);
+    event Strategy__Buy(
+        address indexed buyer, address indexed assetsReceiver, uint256 revenueAmount, uint256 paymentAmount
+    );
 
     modifier nonReentrant() {
         if (slot0.locked == 2) revert Strategy__Reentrancy();
@@ -101,12 +103,11 @@ contract Strategy {
         slot0.locked = 1;
     }
 
-    function buy(
-        address assetsReceiver,
-        uint256 epochId,
-        uint256 deadline,
-        uint256 maxPaymentAmount
-    ) external nonReentrant returns (uint256 paymentAmount) {
+    function buy(address assetsReceiver, uint256 epochId, uint256 deadline, uint256 maxPaymentAmount)
+        external
+        nonReentrant
+        returns (uint256 paymentAmount)
+    {
         if (block.timestamp > deadline) revert Strategy__DeadlinePassed();
 
         Slot0 memory slot0Cache = slot0;
@@ -121,15 +122,13 @@ contract Strategy {
         if (paymentAmount > 0) {
             paymentToken.safeTransferFrom(msg.sender, address(this), paymentAmount);
 
-            address bribeRouter = IVoter(voter).strategy_BribeRouter(address(this));
             uint256 bribeSplit = IVoter(voter).bribeSplit();
             uint256 bribeAmount = paymentAmount * bribeSplit / DIVISOR;
             uint256 receiverAmount = paymentAmount - bribeAmount;
 
-            if (bribeAmount > 0 && bribeRouter != address(0)) {
+            if (bribeAmount > 0) {
+                address bribeRouter = IVoter(voter).strategy_BribeRouter(address(this));
                 paymentToken.safeTransfer(bribeRouter, bribeAmount);
-            } else {
-                receiverAmount = paymentAmount;
             }
 
             if (receiverAmount > 0) paymentToken.safeTransfer(paymentReceiver, receiverAmount);
@@ -141,7 +140,9 @@ contract Strategy {
         if (newInitPrice > ABS_MAX_INIT_PRICE) newInitPrice = ABS_MAX_INIT_PRICE;
         else if (newInitPrice < minInitPrice) newInitPrice = minInitPrice;
 
-        unchecked { slot0Cache.epochId++; }
+        unchecked {
+            slot0Cache.epochId++;
+        }
         slot0Cache.initPrice = uint192(newInitPrice);
         slot0Cache.startTime = uint40(block.timestamp);
         slot0 = slot0Cache;
@@ -155,8 +156,19 @@ contract Strategy {
         return slot0Cache.initPrice - slot0Cache.initPrice * timePassed / epochPeriod;
     }
 
-    function getPrice() external view nonReentrantView returns (uint256) { return getPriceFromCache(slot0); }
-    function getSlot0() external view nonReentrantView returns (Slot0 memory) { return slot0; }
-    function getRevenueBalance() external view returns (uint256) { return revenueToken.balanceOf(address(this)); }
-    function getBribeRouter() external view returns (address) { return IVoter(voter).strategy_BribeRouter(address(this)); }
+    function getPrice() external view nonReentrantView returns (uint256) {
+        return getPriceFromCache(slot0);
+    }
+
+    function getSlot0() external view nonReentrantView returns (Slot0 memory) {
+        return slot0;
+    }
+
+    function getRevenueBalance() external view returns (uint256) {
+        return revenueToken.balanceOf(address(this));
+    }
+
+    function getBribeRouter() external view returns (address) {
+        return IVoter(voter).strategy_BribeRouter(address(this));
+    }
 }

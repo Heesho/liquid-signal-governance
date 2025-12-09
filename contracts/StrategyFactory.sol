@@ -13,7 +13,9 @@ contract StrategyFactory {
     address public lastStrategy;
     address public lastBribeRouter;
 
-    event StrategyFactory__StrategyCreated(address indexed strategy, address indexed bribeRouter, address paymentReceiver);
+    event StrategyFactory__StrategyCreated(
+        address indexed strategy, address indexed bribeRouter, address paymentReceiver
+    );
 
     function createStrategy(
         address _voter,

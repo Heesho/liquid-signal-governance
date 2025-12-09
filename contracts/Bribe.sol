@@ -179,9 +179,13 @@ contract Bribe is ReentrancyGuard {
         return remaining * token_RewardData[_rewardsToken].rewardRate;
     }
 
-    function totalSupply() external view returns (uint256) { return _totalSupply; }
+    function totalSupply() external view returns (uint256) {
+        return _totalSupply;
+    }
 
-    function balanceOf(address account) external view returns (uint256) { return account_Balance[account]; }
+    function balanceOf(address account) external view returns (uint256) {
+        return account_Balance[account];
+    }
 
     function lastTimeRewardApplicable(address _rewardsToken) public view returns (uint256) {
         return Math.min(block.timestamp, token_RewardData[_rewardsToken].periodFinish);
@@ -189,20 +193,25 @@ contract Bribe is ReentrancyGuard {
 
     function rewardPerToken(address _rewardsToken) public view returns (uint256) {
         if (_totalSupply == 0) return token_RewardData[_rewardsToken].rewardPerTokenStored;
-        return token_RewardData[_rewardsToken].rewardPerTokenStored +
-            ((lastTimeRewardApplicable(_rewardsToken) - token_RewardData[_rewardsToken].lastUpdateTime)
-            * token_RewardData[_rewardsToken].rewardRate * 1e18 / _totalSupply);
+        return token_RewardData[_rewardsToken].rewardPerTokenStored
+            + (
+                (lastTimeRewardApplicable(_rewardsToken) - token_RewardData[_rewardsToken].lastUpdateTime)
+                    * token_RewardData[_rewardsToken].rewardRate * 1e18 / _totalSupply
+            );
     }
 
     function earned(address account, address _rewardsToken) public view returns (uint256) {
-        return (account_Balance[account] *
-            (rewardPerToken(_rewardsToken) - account_Token_RewardPerTokenPaid[account][_rewardsToken]) / 1e18)
-            + account_Token_Rewards[account][_rewardsToken];
+        return (
+            account_Balance[account]
+                * (rewardPerToken(_rewardsToken) - account_Token_RewardPerTokenPaid[account][_rewardsToken]) / 1e18
+        ) + account_Token_Rewards[account][_rewardsToken];
     }
 
     function getRewardForDuration(address _rewardsToken) external view returns (uint256) {
         return token_RewardData[_rewardsToken].rewardRate * DURATION;
     }
 
-    function getRewardTokens() external view returns (address[] memory) { return rewardTokens; }
+    function getRewardTokens() external view returns (address[] memory) {
+        return rewardTokens;
+    }
 }
