@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-interface IAuctionFactory {
-    function lastAuction() external view returns (address);
+interface IStrategyFactory {
+    function lastStrategy() external view returns (address);
     function lastBribeRouter() external view returns (address);
 
-    function createAuction(
+    function createStrategy(
         address voter,
         address revenueToken,
         address paymentToken,
@@ -14,5 +14,5 @@ interface IAuctionFactory {
         uint256 epochPeriod,
         uint256 priceMultiplier,
         uint256 minInitPrice
-    ) external returns (address auction, address bribeRouter);
+    ) external returns (address strategy, address bribeRouter);
 }

@@ -2,7 +2,8 @@
 pragma solidity 0.8.19;
 
 interface IGovernanceToken {
-    function UNDERLYING() external view returns (address);
+    function token() external view returns (address);
+    function underlying() external view returns (address);
     function voter() external view returns (address);
     function balanceOf(address account) external view returns (uint256);
     function totalSupply() external view returns (uint256);

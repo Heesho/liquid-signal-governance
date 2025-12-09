@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
 
-interface IAuction {
+interface IStrategy {
     struct Slot0 {
         uint8 locked;
         uint16 epochId;
@@ -29,7 +29,6 @@ interface IAuction {
         uint256 maxPaymentAmount
     ) external returns (uint256 paymentAmount);
 
-    // Constants
     function MIN_EPOCH_PERIOD() external pure returns (uint256);
     function MAX_EPOCH_PERIOD() external pure returns (uint256);
     function MIN_PRICE_MULTIPLIER() external pure returns (uint256);

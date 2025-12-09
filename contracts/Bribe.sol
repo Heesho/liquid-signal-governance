@@ -20,7 +20,7 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
  *      - Multiple Reward Tokens: Can distribute multiple token types simultaneously
  *
  * Reward Flow:
- * 1. Auction sells revenue tokens, portion of payment goes to BribeRouter
+ * 1. Strategy sells revenue tokens, portion of payment goes to BribeRouter
  * 2. BribeRouter calls notifyRewardAmount() to start reward distribution
  * 3. Rewards stream to voters over 7 days based on their virtual balance
  * 4. Voters call getReward() to claim accumulated rewards
@@ -41,13 +41,6 @@ contract Bribe is ReentrancyGuard {
 
     /*----------  STATE VARIABLES  --------------------------------------*/
 
-    /**
-     * @notice Reward state for each reward token
-     * @param periodFinish Timestamp when current reward period ends
-     * @param rewardRate Tokens distributed per second
-     * @param lastUpdateTime Last time rewards were calculated
-     * @param rewardPerTokenStored Accumulated rewards per token (scaled by 1e18)
-     */
     struct Reward {
         uint256 periodFinish;
         uint256 rewardRate;
@@ -55,30 +48,14 @@ contract Bribe is ReentrancyGuard {
         uint256 rewardPerTokenStored;
     }
 
-    /// @notice Reward state for each reward token
-    mapping(address => Reward) public rewardData;
-
-    /// @notice Whether a token is an approved reward token
-    mapping(address => bool) public isRewardToken;
-
-    /// @notice Array of all reward token addresses
+    mapping(address => Reward) public token_RewardData;
+    mapping(address => bool) public token_IsReward;
     address[] public rewardTokens;
-
-    /// @notice The Voter contract that controls deposits/withdrawals
     address public immutable voter;
-
-    /// @notice account => token => rewardPerToken value when last claimed
-    /// @dev Used to calculate rewards since last interaction
-    mapping(address => mapping(address => uint256)) public userRewardPerTokenPaid;
-
-    /// @notice account => token => pending rewards to claim
-    mapping(address => mapping(address => uint256)) public rewards;
-
-    /// @notice Total virtual balance (sum of all vote weights for this strategy)
+    mapping(address => mapping(address => uint256)) public account_Token_RewardPerTokenPaid;
+    mapping(address => mapping(address => uint256)) public account_Token_Rewards;
     uint256 private _totalSupply;
-
-    /// @notice account => virtual balance (vote weight for this strategy)
-    mapping(address => uint256) private _balances;
+    mapping(address => uint256) private account_Balance;
 
     /*----------  ERRORS ------------------------------------------------*/
 
@@ -99,28 +76,14 @@ contract Bribe is ReentrancyGuard {
 
     /*----------  MODIFIERS  --------------------------------------------*/
 
-    /**
-     * @notice Updates reward state for all tokens before any balance change
-     * @param account The account to update rewards for (address(0) for global only)
-     *
-     * @dev This modifier implements the "checkpoint" pattern:
-     *      1. Updates global rewardPerToken for each reward token
-     *      2. If account specified, calculates and stores their pending rewards
-     *      3. Syncs user's rewardPerTokenPaid to current value
-     */
     modifier updateReward(address account) {
         for (uint256 i; i < rewardTokens.length; i++) {
             address token = rewardTokens[i];
-            // Update global reward accumulator
-            rewardData[token].rewardPerTokenStored = rewardPerToken(token);
-            rewardData[token].lastUpdateTime = lastTimeRewardApplicable(token);
-
-            // Update user-specific state if account provided
+            token_RewardData[token].rewardPerTokenStored = rewardPerToken(token);
+            token_RewardData[token].lastUpdateTime = lastTimeRewardApplicable(token);
             if (account != address(0)) {
-                // Calculate and store pending rewards
-                rewards[account][token] = earned(account, token);
-                // Sync to current rewardPerToken
-                userRewardPerTokenPaid[account][token] = rewardData[token].rewardPerTokenStored;
+                account_Token_Rewards[account][token] = earned(account, token);
+                account_Token_RewardPerTokenPaid[account][token] = token_RewardData[token].rewardPerTokenStored;
             }
         }
         _;
@@ -154,217 +117,92 @@ contract Bribe is ReentrancyGuard {
 
     /*----------  EXTERNAL FUNCTIONS  -----------------------------------*/
 
-    /**
-     * @notice Claim all pending rewards for an account
-     * @param account The address to claim rewards for
-     * @dev Anyone can call this for any account (rewards go to account)
-     *
-     * Flow:
-     * 1. updateReward modifier calculates pending rewards
-     * 2. For each reward token with balance > 0:
-     *    - Reset pending rewards to 0
-     *    - Transfer tokens to account
-     */
-    function getReward(address account)
-        external
-        nonReentrant
-        updateReward(account)
-    {
+    function getReward(address account) external nonReentrant updateReward(account) {
         for (uint256 i = 0; i < rewardTokens.length; i++) {
             address _rewardsToken = rewardTokens[i];
-            uint256 reward = rewards[account][_rewardsToken];
+            uint256 reward = account_Token_Rewards[account][_rewardsToken];
             if (reward > 0) {
-                rewards[account][_rewardsToken] = 0;
+                account_Token_Rewards[account][_rewardsToken] = 0;
                 emit Bribe__RewardPaid(account, _rewardsToken, reward);
                 IERC20(_rewardsToken).safeTransfer(account, reward);
             }
         }
     }
 
-    /**
-     * @notice Start or extend reward distribution for a token
-     * @param _rewardsToken The reward token to distribute
-     * @param reward The amount of tokens to distribute
-     *
-     * @dev Typically called by BribeRouter after auction completes
-     *
-     * Distribution logic:
-     * - If current period ended: rewardRate = reward / DURATION
-     * - If period ongoing: rewardRate = (reward + leftover) / DURATION
-     *   This extends the period and increases rate
-     *
-     * Requirements:
-     * - reward >= DURATION (at least 1 token per second to avoid dust)
-     * - reward >= left() (can't reduce distribution mid-period)
-     * - Token must be whitelisted via addReward()
-     */
-    function notifyRewardAmount(address _rewardsToken, uint256 reward)
-        external
-        nonReentrant
-        updateReward(address(0))
-    {
-        // Minimum reward to prevent dust issues
+    function notifyRewardAmount(address _rewardsToken, uint256 reward) external nonReentrant updateReward(address(0)) {
         if (reward < DURATION) revert Bribe__RewardSmallerThanDuration();
-        // Can't notify less than what's already committed
         if (reward < left(_rewardsToken)) revert Bribe__RewardSmallerThanLeft();
-        // Must be a whitelisted reward token
-        if (!isRewardToken[_rewardsToken]) revert Bribe__NotRewardToken();
+        if (!token_IsReward[_rewardsToken]) revert Bribe__NotRewardToken();
 
-        // Pull reward tokens from caller
         IERC20(_rewardsToken).safeTransferFrom(msg.sender, address(this), reward);
 
-        if (block.timestamp >= rewardData[_rewardsToken].periodFinish) {
-            // Period ended - start fresh
-            rewardData[_rewardsToken].rewardRate = reward / DURATION;
+        if (block.timestamp >= token_RewardData[_rewardsToken].periodFinish) {
+            token_RewardData[_rewardsToken].rewardRate = reward / DURATION;
         } else {
-            // Period ongoing - add to existing rewards
-            uint256 remaining = rewardData[_rewardsToken].periodFinish - block.timestamp;
-            uint256 leftover = remaining * rewardData[_rewardsToken].rewardRate;
-            rewardData[_rewardsToken].rewardRate = (reward + leftover) / DURATION;
+            uint256 remaining = token_RewardData[_rewardsToken].periodFinish - block.timestamp;
+            uint256 leftover = remaining * token_RewardData[_rewardsToken].rewardRate;
+            token_RewardData[_rewardsToken].rewardRate = (reward + leftover) / DURATION;
         }
 
-        rewardData[_rewardsToken].lastUpdateTime = block.timestamp;
-        rewardData[_rewardsToken].periodFinish = block.timestamp + DURATION;
+        token_RewardData[_rewardsToken].lastUpdateTime = block.timestamp;
+        token_RewardData[_rewardsToken].periodFinish = block.timestamp + DURATION;
 
         emit Bribe__RewardNotified(_rewardsToken, reward);
     }
 
     /*----------  RESTRICTED FUNCTIONS (VOTER ONLY)  --------------------*/
 
-    /**
-     * @notice Create virtual balance for account (called when user votes)
-     * @param amount The vote weight to deposit
-     * @param account The account voting
-     *
-     * @dev Called by Voter._vote() when user votes for this strategy
-     *      No actual tokens are transferred - just virtual balance tracking
-     */
-    function _deposit(uint256 amount, address account)
-        external
-        onlyVoter
-        nonZeroInput(amount)
-        updateReward(account)
-    {
+    function _deposit(uint256 amount, address account) external onlyVoter nonZeroInput(amount) updateReward(account) {
         _totalSupply = _totalSupply + amount;
-        _balances[account] = _balances[account] + amount;
+        account_Balance[account] = account_Balance[account] + amount;
         emit Bribe__Deposited(account, amount);
     }
 
-    /**
-     * @notice Remove virtual balance for account (called when user resets votes)
-     * @param amount The vote weight to withdraw
-     * @param account The account resetting
-     *
-     * @dev Called by Voter._reset() when user clears their votes
-     *      updateReward modifier ensures pending rewards are captured first
-     */
-    function _withdraw(uint256 amount, address account)
-        external
-        onlyVoter
-        nonZeroInput(amount)
-        updateReward(account)
-    {
+    function _withdraw(uint256 amount, address account) external onlyVoter nonZeroInput(amount) updateReward(account) {
         _totalSupply = _totalSupply - amount;
-        _balances[account] = _balances[account] - amount;
+        account_Balance[account] = account_Balance[account] - amount;
         emit Bribe__Withdrawn(account, amount);
     }
 
-    /**
-     * @notice Whitelist a new reward token
-     * @param _rewardsToken The token to add as a reward
-     *
-     * @dev Called by Voter when creating strategy (adds payment token)
-     *      Can also be called later via Voter.addBribeReward()
-     */
-    function addReward(address _rewardsToken)
-        external
-        onlyVoter
-    {
-        if (isRewardToken[_rewardsToken]) revert Bribe__RewardTokenAlreadyAdded();
-        isRewardToken[_rewardsToken] = true;
+    function addReward(address _rewardsToken) external onlyVoter {
+        if (token_IsReward[_rewardsToken]) revert Bribe__RewardTokenAlreadyAdded();
+        token_IsReward[_rewardsToken] = true;
         rewardTokens.push(_rewardsToken);
         emit Bribe__RewardAdded(_rewardsToken);
     }
 
     /*----------  VIEW FUNCTIONS  ---------------------------------------*/
 
-    /**
-     * @notice Get remaining rewards to be distributed for a token
-     * @param _rewardsToken The reward token to check
-     * @return leftover Amount of tokens still to be distributed
-     */
-    function left(address _rewardsToken) public view returns (uint256 leftover) {
-        if (block.timestamp >= rewardData[_rewardsToken].periodFinish) return 0;
-        uint256 remaining = rewardData[_rewardsToken].periodFinish - block.timestamp;
-        return remaining * rewardData[_rewardsToken].rewardRate;
+    function left(address _rewardsToken) public view returns (uint256) {
+        if (block.timestamp >= token_RewardData[_rewardsToken].periodFinish) return 0;
+        uint256 remaining = token_RewardData[_rewardsToken].periodFinish - block.timestamp;
+        return remaining * token_RewardData[_rewardsToken].rewardRate;
     }
 
-    /**
-     * @notice Get total virtual balance (total votes for this strategy)
-     */
-    function totalSupply() external view returns (uint256) {
-        return _totalSupply;
-    }
+    function totalSupply() external view returns (uint256) { return _totalSupply; }
 
-    /**
-     * @notice Get virtual balance for an account (their votes for this strategy)
-     * @param account The account to query
-     */
-    function balanceOf(address account) external view returns (uint256) {
-        return _balances[account];
-    }
+    function balanceOf(address account) external view returns (uint256) { return account_Balance[account]; }
 
-    /**
-     * @notice Get the last timestamp where rewards are applicable
-     * @param _rewardsToken The reward token to check
-     * @return The earlier of: current time or period end
-     */
     function lastTimeRewardApplicable(address _rewardsToken) public view returns (uint256) {
-        return Math.min(block.timestamp, rewardData[_rewardsToken].periodFinish);
+        return Math.min(block.timestamp, token_RewardData[_rewardsToken].periodFinish);
     }
 
-    /**
-     * @notice Calculate current reward per token (accumulated)
-     * @param _rewardsToken The reward token to calculate for
-     * @return Accumulated rewards per unit of virtual balance (scaled by 1e18)
-     *
-     * @dev Formula: stored + (timeDelta * rewardRate * 1e18 / totalSupply)
-     */
     function rewardPerToken(address _rewardsToken) public view returns (uint256) {
-        if (_totalSupply == 0) return rewardData[_rewardsToken].rewardPerTokenStored;
-        return rewardData[_rewardsToken].rewardPerTokenStored +
-            ((lastTimeRewardApplicable(_rewardsToken) - rewardData[_rewardsToken].lastUpdateTime)
-            * rewardData[_rewardsToken].rewardRate * 1e18 / _totalSupply);
+        if (_totalSupply == 0) return token_RewardData[_rewardsToken].rewardPerTokenStored;
+        return token_RewardData[_rewardsToken].rewardPerTokenStored +
+            ((lastTimeRewardApplicable(_rewardsToken) - token_RewardData[_rewardsToken].lastUpdateTime)
+            * token_RewardData[_rewardsToken].rewardRate * 1e18 / _totalSupply);
     }
 
-    /**
-     * @notice Calculate pending rewards for an account
-     * @param account The account to calculate for
-     * @param _rewardsToken The reward token to calculate
-     * @return Pending reward amount (not yet claimed)
-     *
-     * @dev Formula: (balance * (rewardPerToken - userPaid) / 1e18) + stored
-     */
     function earned(address account, address _rewardsToken) public view returns (uint256) {
-        return (_balances[account] *
-            (rewardPerToken(_rewardsToken) - userRewardPerTokenPaid[account][_rewardsToken]) / 1e18)
-            + rewards[account][_rewardsToken];
+        return (account_Balance[account] *
+            (rewardPerToken(_rewardsToken) - account_Token_RewardPerTokenPaid[account][_rewardsToken]) / 1e18)
+            + account_Token_Rewards[account][_rewardsToken];
     }
 
-    /**
-     * @notice Get total rewards distributed over the full duration
-     * @param _rewardsToken The reward token to query
-     * @return Total rewards for the 7-day period at current rate
-     */
     function getRewardForDuration(address _rewardsToken) external view returns (uint256) {
-        return rewardData[_rewardsToken].rewardRate * DURATION;
+        return token_RewardData[_rewardsToken].rewardRate * DURATION;
     }
 
-    /**
-     * @notice Get all reward token addresses
-     * @return Array of reward token addresses
-     */
-    function getRewardTokens() external view returns (address[] memory) {
-        return rewardTokens;
-    }
+    function getRewardTokens() external view returns (address[] memory) { return rewardTokens; }
 }
