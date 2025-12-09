@@ -98,14 +98,14 @@ describe("System-Wide Tests", function () {
 
     async function buyFromStrategy(strategyAddr, buyer, payment = paymentToken) {
         const strategy = await ethers.getContractAt("Strategy", strategyAddr);
-        const slot0 = await strategy.getSlot0();
+        const epochId = await strategy.epochId();
         const price = await strategy.getPrice();
 
         await payment.connect(buyer).approve(strategy.address, price);
         const block = await ethers.provider.getBlock("latest");
         const deadline = block.timestamp + 3600;
 
-        const tx = await strategy.connect(buyer).buy(buyer.address, slot0.epochId, deadline, price);
+        const tx = await strategy.connect(buyer).buy(buyer.address, epochId, deadline, price);
         const receipt = await tx.wait();
         const event = receipt.events.find(e => e.event === "Strategy__Buy");
         return event.args.paymentAmount; // Return actual payment amount from event
@@ -322,14 +322,12 @@ describe("System-Wide Tests", function () {
             await voter["distribute(address)"](strategy);
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            const slot0Before = await strategyContract.getSlot0();
-            const initPriceBefore = slot0Before.initPrice;
+            const initPriceBefore = await strategyContract.initPrice();
 
             // Buy at full price
             await buyFromStrategy(strategy, buyer1);
 
-            const slot0After = await strategyContract.getSlot0();
-            const initPriceAfter = slot0After.initPrice;
+            const initPriceAfter = await strategyContract.initPrice();
 
             // New price should be payment * priceMultiplier
             // priceMultiplier = 2e18, so new price should be ~2x
@@ -352,9 +350,9 @@ describe("System-Wide Tests", function () {
 
             const balanceBefore = await revenueToken.balanceOf(buyer1.address);
 
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const block = await ethers.provider.getBlock("latest");
-            await strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, 0);
+            await strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, 0);
 
             expect(await revenueToken.balanceOf(buyer1.address)).to.equal(balanceBefore.add(ethers.utils.parseEther("100")));
         });
@@ -368,7 +366,7 @@ describe("System-Wide Tests", function () {
             await voter["distribute(address)"](strategy);
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(buyer1).approve(strategyContract.address, price);
@@ -376,7 +374,7 @@ describe("System-Wide Tests", function () {
 
             // Use wrong epoch ID
             await expect(
-                strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId + 1, block.timestamp + 3600, price)
+                strategyContract.connect(buyer1).buy(buyer1.address, epochId.add(1), block.timestamp + 3600, price)
             ).to.be.reverted;
         });
 
@@ -738,7 +736,7 @@ describe("System-Wide Tests", function () {
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
 
-            // The contract has nonReentrant modifier - we can verify by checking slot0.locked
+            // The contract inherits ReentrancyGuard from OpenZeppelin
             // In a real attack scenario, the attacker would try to reenter during safeTransfer
             // but the nonReentrant modifier prevents this
         });

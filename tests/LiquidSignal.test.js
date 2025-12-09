@@ -363,7 +363,7 @@ describe("Liquid Signal Governance", function () {
         });
 
         it("should allow buying at current price", async function () {
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const revenueBalance = await strategyContract.getRevenueBalance();
             const price = await strategyContract.getPrice();
 
@@ -371,13 +371,13 @@ describe("Liquid Signal Governance", function () {
 
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
-            await strategyContract.connect(user2).buy(user2.address, slot0.epochId, deadline, price);
+            await strategyContract.connect(user2).buy(user2.address, epochId, deadline, price);
 
             expect(await revenueToken.balanceOf(user2.address)).to.equal(revenueBalance);
         });
 
         it("should split payment between receiver and bribe router", async function () {
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
 
             await paymentToken.connect(user2).approve(strategyContract.address, ethers.utils.parseUnits("200", 6));
 
@@ -387,7 +387,7 @@ describe("Liquid Signal Governance", function () {
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
             const maxPayment = ethers.utils.parseUnits("200", 6);
-            await strategyContract.connect(user2).buy(user2.address, slot0.epochId, deadline, maxPayment);
+            await strategyContract.connect(user2).buy(user2.address, epochId, deadline, maxPayment);
 
             const treasuryAfter = await paymentToken.balanceOf(treasury.address);
             const bribeRouterAfter = await paymentToken.balanceOf(bribeRouter);
@@ -405,7 +405,7 @@ describe("Liquid Signal Governance", function () {
         });
 
         it("should adjust next epoch price based on payment", async function () {
-            const slot0Before = await strategyContract.getSlot0();
+            const epochIdBefore = await strategyContract.epochId();
 
             await paymentToken.connect(user2).approve(strategyContract.address, ethers.utils.parseUnits("200", 6));
 
@@ -415,18 +415,19 @@ describe("Liquid Signal Governance", function () {
 
             // Get actual price at time of buy
             const priceBefore = await strategyContract.getPrice();
-            await strategyContract.connect(user2).buy(user2.address, slot0Before.epochId, deadline, maxPayment);
+            await strategyContract.connect(user2).buy(user2.address, epochIdBefore, deadline, maxPayment);
 
-            const slot0After = await strategyContract.getSlot0();
+            const initPriceAfter = await strategyContract.initPrice();
+            const epochIdAfter = await strategyContract.epochId();
 
             // priceMultiplier is 2x - next price should be ~2x what was paid
             // Allow some tolerance for block timing
-            expect(slot0After.initPrice).to.be.closeTo(priceBefore.mul(2), priceBefore.div(10));
-            expect(slot0After.epochId).to.equal(slot0Before.epochId + 1);
+            expect(initPriceAfter).to.be.closeTo(priceBefore.mul(2), priceBefore.div(10));
+            expect(epochIdAfter).to.equal(epochIdBefore.add(1));
         });
 
         it("should revert if epoch id mismatch (frontrun protection)", async function () {
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user2).approve(strategyContract.address, price);
@@ -434,12 +435,12 @@ describe("Liquid Signal Governance", function () {
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
             await expect(
-                strategyContract.connect(user2).buy(user2.address, slot0.epochId + 1, deadline, price)
+                strategyContract.connect(user2).buy(user2.address, epochId.add(1), deadline, price)
             ).to.be.reverted;
         });
 
         it("should revert if max payment exceeded", async function () {
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user2).approve(strategyContract.address, price);
@@ -449,7 +450,7 @@ describe("Liquid Signal Governance", function () {
             // Set max payment to less than current price to trigger revert
             const tooLowMax = price.div(2);
             await expect(
-                strategyContract.connect(user2).buy(user2.address, slot0.epochId, deadline, tooLowMax)
+                strategyContract.connect(user2).buy(user2.address, epochId, deadline, tooLowMax)
             ).to.be.reverted;
         });
     });
@@ -480,13 +481,13 @@ describe("Liquid Signal Governance", function () {
             await voter["distribute(address)"](strategy);
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user2).approve(strategyContract.address, price);
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
-            await strategyContract.connect(user2).buy(user2.address, slot0.epochId, deadline, price);
+            await strategyContract.connect(user2).buy(user2.address, epochId, deadline, price);
 
             // Distribute bribe
             const BribeRouter = await ethers.getContractFactory("BribeRouter");
@@ -508,13 +509,13 @@ describe("Liquid Signal Governance", function () {
             await voter["distribute(address)"](strategy);
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user2).approve(strategyContract.address, price);
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
-            await strategyContract.connect(user2).buy(user2.address, slot0.epochId, deadline, price);
+            await strategyContract.connect(user2).buy(user2.address, epochId, deadline, price);
 
             const BribeRouter = await ethers.getContractFactory("BribeRouter");
             const bribeRouterContract = BribeRouter.attach(bribeRouter);
@@ -542,14 +543,14 @@ describe("Liquid Signal Governance", function () {
             await voter["distribute(address)"](strategy);
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user3).mint(user3.address, price);
             await paymentToken.connect(user3).approve(strategyContract.address, price);
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
-            await strategyContract.connect(user3).buy(user3.address, slot0.epochId, deadline, price);
+            await strategyContract.connect(user3).buy(user3.address, epochId, deadline, price);
 
             const BribeRouter = await ethers.getContractFactory("BribeRouter");
             const bribeRouterContract = BribeRouter.attach(bribeRouter);
@@ -597,14 +598,14 @@ describe("Liquid Signal Governance", function () {
 
             // 6. Buyer purchases from strategy
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user3).mint(user3.address, price);
             await paymentToken.connect(user3).approve(strategyContract.address, price);
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
-            await strategyContract.connect(user3).buy(user3.address, slot0.epochId, deadline, price);
+            await strategyContract.connect(user3).buy(user3.address, epochId, deadline, price);
 
             // user3 got revenue tokens
             expect(await revenueToken.balanceOf(user3.address)).to.equal(ethers.utils.parseEther("100"));

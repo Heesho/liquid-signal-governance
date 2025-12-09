@@ -107,14 +107,14 @@ describe("Business Logic Tests", function () {
 
     async function buyFromStrategy(strategyAddr, buyer, payment = paymentToken) {
         const strategy = await ethers.getContractAt("Strategy", strategyAddr);
-        const slot0 = await strategy.getSlot0();
+        const epochId = await strategy.epochId();
         const price = await strategy.getPrice();
 
         await payment.connect(buyer).approve(strategy.address, price);
         const block = await ethers.provider.getBlock("latest");
         const deadline = block.timestamp + 3600;
 
-        await strategy.connect(buyer).buy(buyer.address, slot0.epochId, deadline, price);
+        await strategy.connect(buyer).buy(buyer.address, epochId, deadline, price);
         return price;
     }
 
@@ -130,7 +130,7 @@ describe("Business Logic Tests", function () {
                 await voter["distribute(address)"](strategy);
 
                 const strategyContract = await ethers.getContractAt("Strategy", strategy);
-                const initPrice = (await strategyContract.getSlot0()).initPrice;
+                const initPrice = await strategyContract.initPrice();
 
                 // At t=0, price = initPrice
                 const price0 = await strategyContract.getPrice();
@@ -181,21 +181,23 @@ describe("Business Logic Tests", function () {
                 await voter["distribute(address)"](strategy);
 
                 const strategyContract = await ethers.getContractAt("Strategy", strategy);
-                const slot0Before = await strategyContract.getSlot0();
+                const epochIdBefore = await strategyContract.epochId();
 
                 await buyFromStrategy(strategy, buyer1);
 
-                const slot0After = await strategyContract.getSlot0();
+                const epochIdAfter = await strategyContract.epochId();
+                const startTimeAfter = await strategyContract.startTime();
+                const initPriceAfter = await strategyContract.initPrice();
 
                 // Epoch ID incremented
-                expect(slot0After.epochId).to.equal(slot0Before.epochId + 1);
+                expect(epochIdAfter).to.equal(epochIdBefore.add(1));
 
                 // Start time reset to now
                 const block = await ethers.provider.getBlock("latest");
-                expect(slot0After.startTime).to.be.closeTo(block.timestamp, 2);
+                expect(startTimeAfter.toNumber()).to.be.closeTo(block.timestamp, 2);
 
                 // Price at new epoch start should be close to new initPrice
-                expect(await strategyContract.getPrice()).to.be.closeTo(slot0After.initPrice, slot0After.initPrice.div(100));
+                expect(await strategyContract.getPrice()).to.be.closeTo(initPriceAfter, initPriceAfter.div(100));
             });
 
             it("should increment epochId by 1 on each buy (no overflow)", async function () {
@@ -209,13 +211,13 @@ describe("Business Logic Tests", function () {
                     await sendRevenue(ethers.utils.parseEther("10"));
                     await voter["distribute(address)"](strategy);
 
-                    const slot0Before = await strategyContract.getSlot0();
-                    expect(slot0Before.epochId).to.equal(i);
+                    const epochIdBefore = await strategyContract.epochId();
+                    expect(epochIdBefore).to.equal(i);
 
                     await buyFromStrategy(strategy, buyer1);
 
-                    const slot0After = await strategyContract.getSlot0();
-                    expect(slot0After.epochId).to.equal(i + 1);
+                    const epochIdAfter = await strategyContract.epochId();
+                    expect(epochIdAfter).to.equal(i + 1);
                 }
             });
         });
@@ -243,14 +245,14 @@ describe("Business Logic Tests", function () {
                 expect(lowPrice).to.be.lt(minInitPrice);
 
                 // Buy at low price
-                const slot0 = await strategyContract.getSlot0();
+                const epochId = await strategyContract.epochId();
                 await paymentToken.connect(buyer1).approve(strategy, lowPrice);
                 const block = await ethers.provider.getBlock("latest");
-                await strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, lowPrice);
+                await strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, lowPrice);
 
                 // New initPrice should be clamped to minInitPrice
-                const slot0After = await strategyContract.getSlot0();
-                expect(slot0After.initPrice).to.equal(minInitPrice);
+                const initPriceAfter = await strategyContract.initPrice();
+                expect(initPriceAfter).to.equal(minInitPrice);
             });
 
             it("should apply priceMultiplier correctly", async function () {
@@ -268,10 +270,10 @@ describe("Business Logic Tests", function () {
                 const strategyContract = await ethers.getContractAt("Strategy", strategy);
                 const pricePaid = await buyFromStrategy(strategy, buyer1);
 
-                const slot0After = await strategyContract.getSlot0();
+                const initPriceAfter = await strategyContract.initPrice();
                 // New initPrice = pricePaid * 1.5
                 const expectedNewPrice = pricePaid.mul(15).div(10);
-                expect(slot0After.initPrice).to.be.closeTo(expectedNewPrice, expectedNewPrice.div(100));
+                expect(initPriceAfter).to.be.closeTo(expectedNewPrice, expectedNewPrice.div(100));
             });
 
             it("should handle free purchase (price = 0) and use minInitPrice", async function () {
@@ -294,13 +296,13 @@ describe("Business Logic Tests", function () {
                 expect(await strategyContract.getPrice()).to.equal(0);
 
                 // Buy for free
-                const slot0 = await strategyContract.getSlot0();
+                const epochId = await strategyContract.epochId();
                 const block = await ethers.provider.getBlock("latest");
-                await strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, 0);
+                await strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, 0);
 
                 // New initPrice should be minInitPrice (0 * priceMultiplier = 0, clamped to min)
-                const slot0After = await strategyContract.getSlot0();
-                expect(slot0After.initPrice).to.equal(minInitPrice);
+                const initPriceAfter = await strategyContract.initPrice();
+                expect(initPriceAfter).to.equal(minInitPrice);
             });
         });
 
@@ -313,7 +315,7 @@ describe("Business Logic Tests", function () {
                 await voter["distribute(address)"](strategy);
 
                 const strategyContract = await ethers.getContractAt("Strategy", strategy);
-                const slot0 = await strategyContract.getSlot0();
+                const epochId = await strategyContract.epochId();
                 const price = await strategyContract.getPrice();
 
                 await paymentToken.connect(buyer1).approve(strategy, price);
@@ -321,7 +323,7 @@ describe("Business Logic Tests", function () {
                 const pastDeadline = block.timestamp - 1;
 
                 await expect(
-                    strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, pastDeadline, price)
+                    strategyContract.connect(buyer1).buy(buyer1.address, epochId, pastDeadline, price)
                 ).to.be.reverted;
             });
 
@@ -333,7 +335,7 @@ describe("Business Logic Tests", function () {
                 await voter["distribute(address)"](strategy);
 
                 const strategyContract = await ethers.getContractAt("Strategy", strategy);
-                const slot0 = await strategyContract.getSlot0();
+                const epochId = await strategyContract.epochId();
                 const price = await strategyContract.getPrice();
 
                 await paymentToken.connect(buyer1).approve(strategy, price);
@@ -341,7 +343,7 @@ describe("Business Logic Tests", function () {
 
                 // Set maxPaymentAmount below current price
                 await expect(
-                    strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, price.div(2))
+                    strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, price.div(2))
                 ).to.be.reverted;
             });
 
@@ -350,14 +352,14 @@ describe("Business Logic Tests", function () {
                 // Don't send any revenue
 
                 const strategyContract = await ethers.getContractAt("Strategy", strategy);
-                const slot0 = await strategyContract.getSlot0();
+                const epochId = await strategyContract.epochId();
                 const price = await strategyContract.getPrice();
 
                 await paymentToken.connect(buyer1).approve(strategy, price);
                 const block = await ethers.provider.getBlock("latest");
 
                 await expect(
-                    strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, price)
+                    strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, price)
                 ).to.be.reverted;
             });
         });

@@ -381,11 +381,11 @@ describe("Edge Cases and Security Tests", function () {
             // Wait for price to drop to 0
             await advanceTime(HOUR + 60);
 
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const block = await ethers.provider.getBlock("latest");
 
             // Buy should transfer the small amount
-            await strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, 0);
+            await strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, 0);
             expect(await revenueToken.balanceOf(buyer1.address)).to.equal(smallAmount);
         });
 
@@ -399,24 +399,24 @@ describe("Edge Cases and Security Tests", function () {
             await voter["distribute(address)"](strategy);
 
             const strategyContract = await ethers.getContractAt("Strategy", strategy);
-            let slot0 = await strategyContract.getSlot0();
+            let epochId = await strategyContract.epochId();
             let price = await strategyContract.getPrice();
 
             await paymentToken.connect(buyer1).approve(strategy, price);
             const block = await ethers.provider.getBlock("latest");
-            await strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block.timestamp + 3600, price);
+            await strategyContract.connect(buyer1).buy(buyer1.address, epochId, block.timestamp + 3600, price);
 
             // Try immediate second buy - should fail with epochId mismatch if using old epochId
             await sendRevenue(ethers.utils.parseEther("100"));
             await voter["distribute(address)"](strategy);
 
-            // Need to get new slot0 for new epochId
-            slot0 = await strategyContract.getSlot0();
+            // Need to get new epochId
+            epochId = await strategyContract.epochId();
             price = await strategyContract.getPrice();
 
             await paymentToken.connect(buyer1).approve(strategy, price);
             const block2 = await ethers.provider.getBlock("latest");
-            await strategyContract.connect(buyer1).buy(buyer1.address, slot0.epochId, block2.timestamp + 3600, price);
+            await strategyContract.connect(buyer1).buy(buyer1.address, epochId, block2.timestamp + 3600, price);
         });
     });
 

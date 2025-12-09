@@ -1052,13 +1052,13 @@ describe("Voter Contract - Comprehensive Tests", function () {
 
             // Execute auction buy
             const strategyContract = await ethers.getContractAt("Strategy", strategy1);
-            const slot0 = await strategyContract.getSlot0();
+            const epochId = await strategyContract.epochId();
             const price = await strategyContract.getPrice();
 
             await paymentToken.connect(user2).approve(strategyContract.address, price);
             const block = await ethers.provider.getBlock("latest");
             const deadline = block.timestamp + 3600;
-            await strategyContract.connect(user2).buy(user2.address, slot0.epochId, deadline, price);
+            await strategyContract.connect(user2).buy(user2.address, epochId, deadline, price);
 
             // Distribute bribes
             const bribeRouterAddr = await voter.strategy_BribeRouter(strategy1);

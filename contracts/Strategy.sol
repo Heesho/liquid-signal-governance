@@ -3,6 +3,7 @@ pragma solidity 0.8.19;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
 
 /**
@@ -11,7 +12,7 @@ import {IVoter} from "./interfaces/IVoter.sol";
  * @notice Dutch auction selling revenue tokens. Price decays linearly from initPrice to 0 over epochPeriod.
  *         When bought, price resets to (paymentAmount * priceMultiplier), bounded by [minInitPrice, ABS_MAX_INIT_PRICE].
  */
-contract Strategy {
+contract Strategy is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -43,14 +44,9 @@ contract Strategy {
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
-    struct Slot0 {
-        uint8 locked;       // 1=unlocked, 2=locked (reentrancy)
-        uint16 epochId;     // increments each buy (frontrun protection)
-        uint192 initPrice;  // starting price for current epoch
-        uint40 startTime;   // epoch start timestamp
-    }
-
-    Slot0 internal slot0;
+    uint256 public epochId;      // increments each buy (frontrun protection)
+    uint256 public initPrice;    // starting price for current epoch
+    uint256 public startTime;    // epoch start timestamp
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -60,7 +56,6 @@ contract Strategy {
     error Strategy__EpochIdMismatch();
     error Strategy__MaxPaymentAmountExceeded();
     error Strategy__EmptyAssets();
-    error Strategy__Reentrancy();
     error Strategy__InitPriceBelowMin();
     error Strategy__InitPriceExceedsMax();
     error Strategy__EpochPeriodBelowMin();
@@ -78,22 +73,6 @@ contract Strategy {
     event Strategy__Buy(
         address indexed buyer, address indexed assetsReceiver, uint256 revenueAmount, uint256 paymentAmount
     );
-
-    /*//////////////////////////////////////////////////////////////
-                                MODIFIERS
-    //////////////////////////////////////////////////////////////*/
-
-    modifier nonReentrant() {
-        if (slot0.locked == 2) revert Strategy__Reentrancy();
-        slot0.locked = 2;
-        _;
-        slot0.locked = 1;
-    }
-
-    modifier nonReentrantView() {
-        if (slot0.locked == 2) revert Strategy__Reentrancy();
-        _;
-    }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -127,9 +106,8 @@ contract Strategy {
         priceMultiplier = _priceMultiplier;
         minInitPrice = _minInitPrice;
 
-        slot0.initPrice = uint192(_initPrice);
-        slot0.startTime = uint40(block.timestamp);
-        slot0.locked = 1;
+        initPrice = _initPrice;
+        startTime = block.timestamp;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -138,24 +116,22 @@ contract Strategy {
 
     /// @notice Buys all revenue tokens at current dutch auction price
     /// @param assetsReceiver Address to receive revenue tokens
-    /// @param epochId Must match current epochId (frontrun protection)
+    /// @param _epochId Must match current epochId (frontrun protection)
     /// @param deadline Transaction must execute before this timestamp
     /// @param maxPaymentAmount Maximum payment willing to make (slippage protection)
     /// @return paymentAmount Actual payment amount
-    function buy(address assetsReceiver, uint256 epochId, uint256 deadline, uint256 maxPaymentAmount)
+    function buy(address assetsReceiver, uint256 _epochId, uint256 deadline, uint256 maxPaymentAmount)
         external
         nonReentrant
         returns (uint256 paymentAmount)
     {
         if (block.timestamp > deadline) revert Strategy__DeadlinePassed();
-
-        Slot0 memory slot0Cache = slot0;
-        if (uint16(epochId) != slot0Cache.epochId) revert Strategy__EpochIdMismatch();
+        if (_epochId != epochId) revert Strategy__EpochIdMismatch();
 
         uint256 revenueBalance = revenueToken.balanceOf(address(this));
         if (revenueBalance == 0) revert Strategy__EmptyAssets();
 
-        paymentAmount = getPriceFromCache(slot0Cache);
+        paymentAmount = getPrice();
         if (paymentAmount > maxPaymentAmount) revert Strategy__MaxPaymentAmountExceeded();
 
         if (paymentAmount > 0) {
@@ -183,24 +159,12 @@ contract Strategy {
 
         // advance epoch
         unchecked {
-            slot0Cache.epochId++;
+            epochId++;
         }
-        slot0Cache.initPrice = uint192(newInitPrice);
-        slot0Cache.startTime = uint40(block.timestamp);
-        slot0 = slot0Cache;
+        initPrice = newInitPrice;
+        startTime = block.timestamp;
 
         emit Strategy__Buy(msg.sender, assetsReceiver, revenueBalance, paymentAmount);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                          INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @dev Calculates current price based on linear decay from initPrice to 0
-    function getPriceFromCache(Slot0 memory slot0Cache) internal view returns (uint256) {
-        uint256 timePassed = block.timestamp - slot0Cache.startTime;
-        if (timePassed > epochPeriod) return 0;
-        return slot0Cache.initPrice - slot0Cache.initPrice * timePassed / epochPeriod;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -208,13 +172,10 @@ contract Strategy {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns current auction price
-    function getPrice() external view nonReentrantView returns (uint256) {
-        return getPriceFromCache(slot0);
-    }
-
-    /// @notice Returns current slot0 state
-    function getSlot0() external view nonReentrantView returns (Slot0 memory) {
-        return slot0;
+    function getPrice() public view returns (uint256) {
+        uint256 timePassed = block.timestamp - startTime;
+        if (timePassed > epochPeriod) return 0;
+        return initPrice - initPrice * timePassed / epochPeriod;
     }
 
     /// @notice Returns revenue token balance available for purchase
