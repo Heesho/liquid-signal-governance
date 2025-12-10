@@ -28,44 +28,48 @@ At the highest level, an LSG integration for a protocol has:
 | Component | Description |
 |-----------|-------------|
 | **Revenue Token** | The token in which protocol revenue arrives (e.g., WETH, USDC) |
-| **Governance Token** | A staked, non-transferable governance representation |
-| **LSGVoter** | Routes revenue to strategies based on governance token votes |
-| **Strategies** | Contracts that receive revenue and implement some behavior |
-| **Bribes** | Per-strategy reward contracts for voters |
-| **BribeRouters** | Route auction payments to Bribes |
-| **RevenueRouter** | Bridge between protocol revenue sources and LSGVoter |
+| **GovernanceToken** | A staked, non-transferable governance representation with ERC20Votes support |
+| **Voter** | Routes revenue to strategies based on governance token votes |
+| **Strategy** | Contracts that receive revenue and implement Dutch auction behavior |
+| **Bribe** | Per-strategy reward contracts for voters |
+| **BribeRouter** | Route auction payments to Bribes |
+| **RevenueRouter** | Bridge between protocol revenue sources and Voter |
 
 ---
 
 ## 2. GovernanceToken
 
-**Purpose:** Represent long-term, non-flashloanable voting power.
+**Purpose:** Represent long-term, non-flashloanable voting power with DAO compatibility.
 
 ### Properties
 
-* `UNDERLYING` (immutable): Address of the staked ERC20
+* `token` (immutable): Address of the staked ERC20
+* `voter`: Address of the Voter contract (set by owner)
 * Non-transferable between accounts (only minting/burning allowed)
 * 1:1 exchange rate with underlying token
+* Inherits ERC20, ERC20Permit, ERC20Votes for DAO compatibility (Aragon, Tally, Snapshot, OpenZeppelin Governor)
 
 ### Key Functions
 
 ```solidity
 function stake(uint256 amount) external;
-function unstake(uint256 amount) external;  // Requires usedWeights == 0
-function setVoter(address _voter) external; // One-time setup
+function unstake(uint256 amount) external;  // Requires account_UsedWeights == 0
+function setVoter(address _voter) external; // Owner only
+function underlying() external view returns (address);
 ```
 
 ### Constraints
 
-* Users must **clear votes** (`usedWeights = 0` in Voter) before unstaking
-* Transfers between accounts are disabled
+* Users must **clear votes** (`account_UsedWeights = 0` in Voter) before unstaking
+* Transfers between accounts are disabled (reverts with `GovernanceToken__TransferDisabled`)
 * Only minting (staking) and burning (unstaking) are allowed
+* Zero amounts revert with `GovernanceToken__InvalidZeroAmount`
 
 **Why:** Prevents "vote, transfer, vote again" and flash-loan based governance attacks.
 
 ---
 
-## 3. LSGVoter (Liquid Signal Router)
+## 3. Voter (Liquid Signal Router)
 
 **Purpose:** Core contract that:
 
@@ -73,172 +77,281 @@ function setVoter(address _voter) external; // One-time setup
 * Maintains a global revenue index
 * Splits revenue token across strategies based on vote weights
 * Manages per-strategy Bribe references and BribeRouters
+* Controls bribe split percentage for all strategies
 
 ### Configuration
 
 ```solidity
-address public immutable VTOKEN;          // GovernanceToken
-address public immutable REVENUE_TOKEN;   // e.g., WETH
-address public immutable TREASURY;        // Default receiver
-address public immutable bribefactory;    // LSGBribeFactory
-address public immutable strategyFactory; // StrategyFactory
-address public revenueSource;             // RevenueRouter
+// Immutables
+address public immutable governanceToken;   // GovernanceToken
+address public immutable revenueToken;      // e.g., WETH
+address public immutable treasury;          // Default receiver when no votes
+address public immutable bribeFactory;      // BribeFactory
+address public immutable strategyFactory;   // StrategyFactory
+
+// State
+address public revenueSource;    // RevenueRouter (authorized to notify revenue)
+uint256 public bribeSplit;       // % of strategy payments to bribes (basis points)
+uint256 public totalWeight;      // sum of all strategy weights
+
+// Constants
+uint256 public constant DURATION = 7 days;       // epoch duration for voting
+uint256 public constant MAX_BRIBE_SPLIT = 5000;  // max 50% to bribes
+uint256 public constant DIVISOR = 10000;         // basis points divisor
 ```
 
 ### Strategy Model
 
 From the Voter's perspective, a **Strategy** is identified by an address with:
 
-* A **Bribe** contract (`bribes[strategy]`) for voter incentives
-* A **BribeRouter** (`bribeRouterOf[strategy]`) that feeds the Bribe
-* A **payment token** (`paymentTokenOf[strategy]`)
-* A **weight** (`weights[strategy]`): total governance weight allocated
-* A boolean `isAlive[strategy]` (to kill/pause a strategy)
+* A **Bribe** contract (`strategy_Bribe[strategy]`) for voter incentives
+* A **BribeRouter** (`strategy_BribeRouter[strategy]`) that feeds the Bribe
+* A **payment token** (`strategy_PaymentToken[strategy]`)
+* A **weight** (`strategy_Weight[strategy]`): total governance weight allocated
+* A boolean `strategy_IsValid[strategy]` (whether strategy exists)
+* A boolean `strategy_IsAlive[strategy]` (to kill/pause a strategy)
 
 ### Voting Data Structures
 
 ```solidity
-mapping(address => uint256) public weights;              // strategy => total weight
-mapping(address => mapping(address => uint256)) public votes; // user => strategy => votes
-mapping(address => address[]) public strategyVote;       // user => strategies voted on
-mapping(address => uint256) public usedWeights;          // user => total weight used
-mapping(address => uint256) public lastVoted;            // user => last vote timestamp
+mapping(address => uint256) public strategy_Weight;                    // strategy => total weight
+mapping(address => mapping(address => uint256)) public account_Strategy_Votes; // account => strategy => votes
+mapping(address => address[]) public account_StrategyVote;             // account => strategies voted on
+mapping(address => uint256) public account_UsedWeights;                // account => total votes used
+mapping(address => uint256) public account_LastVoted;                  // account => last vote timestamp
 ```
 
 ### Epoch Rules
 
 * `DURATION = 7 days`
 * Users can vote or reset at most once per 7-day epoch
-* Enforced via `onlyNewEpoch(user)` modifier
+* Enforced via `onlyNewEpoch(account)` modifier
 
 ### Revenue Distribution Accounting
 
 ```solidity
-uint256 internal index;                         // Global revenue index (scaled by 1e18)
-mapping(address => uint256) internal supplyIndex; // strategy => last index at update
-mapping(address => uint256) public claimable;   // strategy => claimable REVENUE_TOKEN
+uint256 internal index;                                    // Global revenue index (scaled by 1e18)
+mapping(address => uint256) internal strategy_SupplyIndex; // strategy => last index at update
+mapping(address => uint256) public strategy_Claimable;     // strategy => claimable revenueToken
 ```
 
-When new revenue arrives:
-1. Calculate `ratio = amount * 1e18 / totalWeight`
-2. Increase `index += ratio`
-3. For each strategy, `_updateFor(strategy)`:
-   * `delta = index - supplyIndex[strategy]`
-   * `share = weights[strategy] * delta / 1e18`
-   * `claimable[strategy] += share` (if alive)
+When new revenue arrives via `notifyRevenue`:
+1. If `totalWeight == 0`, send to treasury
+2. Calculate `ratio = amount * 1e18 / totalWeight`
+3. Increase `index += ratio`
+4. For each strategy, `_updateFor(strategy)`:
+   * `delta = index - strategy_SupplyIndex[strategy]`
+   * `share = strategy_Weight[strategy] * delta / 1e18`
+   * `strategy_Claimable[strategy] += share` (if alive)
 
 ### Core Functions
 
 **Voting:**
 ```solidity
-function vote(address[] calldata strategies, uint256[] calldata weights) external;
+function vote(address[] calldata _strategies, uint256[] calldata _weights) external;
 function reset() external;
-function claimBribes(address[] memory bribes) external;
+function claimBribes(address[] memory _bribes) external;
 ```
 
 **Revenue Flow:**
 ```solidity
-function notifyRevenue(uint256 amount) external; // Only revenueSource
-function distribute(address strategy) public;
-function distributeAll() external; // Distribute to all
+function notifyRevenue(uint256 amount) external;       // Only revenueSource
+function distribute(address _strategy) public;
+function distributeRange(uint256 start, uint256 finish) public;
+function distributeAll() external;
 ```
 
-**Admin (Governance Controlled):**
+**Index Updates:**
 ```solidity
-function setRevenueSource(address source) external;
-function addStrategy(...) external returns (address);
-function addExistingStrategy(address strategy, address paymentToken, address bribeRouter) external;
-function killStrategy(address strategy) external;
-function addBribeReward(address bribe, address rewardToken) external;
+function updateFor(address[] memory _strategies) external;
+function updateForRange(uint256 start, uint256 end) public;
+function updateAll() external;
+function updateStrategy(address _strategy) external;
+```
+
+**Admin (Owner Controlled):**
+```solidity
+function setRevenueSource(address _revenueSource) external;
+function setBribeSplit(uint256 _bribeSplit) external;
+function addStrategy(
+    address _paymentToken,
+    address _paymentReceiver,
+    uint256 _initPrice,
+    uint256 _epochPeriod,
+    uint256 _priceMultiplier,
+    uint256 _minInitPrice
+) external returns (address strategy, address bribe, address bribeRouter);
+function killStrategy(address _strategy) external;
+function addBribeReward(address _bribe, address _rewardToken) external;
+```
+
+**View Functions:**
+```solidity
+function getStrategies() external view returns (address[] memory);
+function length() external view returns (uint256);
+function getStrategyVote(address account) external view returns (address[] memory);
+function strategy_PendingRevenue(address strategy) external view returns (uint256);
 ```
 
 ---
 
-## 4. Strategies (Gauges)
+## 4. Strategy (Dutch Auction)
 
-A **strategy** is any contract that receives `REVENUE_TOKEN` from Voter and implements some behavior.
+A **Strategy** receives `revenueToken` from Voter and sells it via Dutch auction. Price decays linearly from `initPrice` to 0 over `epochPeriod`.
 
-### Common Strategy Types
+### Common Use Cases
 
 | Type | Description |
 |------|-------------|
-| **Accumulation** | Convert REVENUE_TOKEN to target asset via Dutch auction, send to treasury |
-| **Buyback & Burn** | Swap REVENUE_TOKEN → protocol token, burn |
-| **Builder Funding** | Swap REVENUE_TOKEN → USDC, send to dev multisig |
-| **Native Hold** | Hold REVENUE_TOKEN as-is in treasury |
+| **Accumulation** | Convert revenueToken to target asset via Dutch auction, send to treasury |
+| **Buyback & Burn** | Swap revenueToken → protocol token, burn |
+| **Builder Funding** | Swap revenueToken → USDC, send to dev multisig |
 
-### Strategy Contract (Dutch Auction)
-
-The default strategy is a Dutch auction that:
-* Receives REVENUE_TOKEN from LSGVoter
-* Sells via descending price auction
-* Sends payment to configurable receiver
-* Routes bribe portion to BribeRouter
+### Configuration
 
 ```solidity
-address public immutable voter;
-address public immutable paymentReceiver;  // Where payments go
-uint256 public immutable bribeSplit;       // % to bribes (basis points)
-uint256 public immutable epochPeriod;
-uint256 public immutable priceMultiplier;
+// Constants
+uint256 public constant MIN_EPOCH_PERIOD = 1 hours;
+uint256 public constant MAX_EPOCH_PERIOD = 365 days;
+uint256 public constant MIN_PRICE_MULTIPLIER = 1.1e18;   // min 1.1x
+uint256 public constant MAX_PRICE_MULTIPLIER = 3e18;     // max 3x
+uint256 public constant ABS_MIN_INIT_PRICE = 1e6;
+uint256 public constant ABS_MAX_INIT_PRICE = type(uint192).max;
+uint256 public constant PRICE_MULTIPLIER_SCALE = 1e18;
+uint256 public constant DIVISOR = 10000;
+
+// Immutables
+address public immutable voter;           // voter contract for bribe split lookup
+IERC20 public immutable revenueToken;     // token being auctioned
+IERC20 public immutable paymentToken;     // token used to pay
+address public immutable paymentReceiver; // receives payment (minus bribe split)
+uint256 public immutable epochPeriod;     // duration of price decay
+uint256 public immutable priceMultiplier; // multiplier for next epoch's init price
+uint256 public immutable minInitPrice;    // floor for init price
+
+// State
+uint256 public epochId;      // increments each buy (frontrun protection)
+uint256 public initPrice;    // starting price for current epoch
+uint256 public startTime;    // epoch start timestamp
 ```
+
+### Key Behavior
+
+When bought:
+1. Price resets to `paymentAmount * priceMultiplier / 1e18`
+2. New price bounded by `[minInitPrice, ABS_MAX_INIT_PRICE]`
+3. Payment split between `paymentReceiver` and `bribeRouter` based on `Voter.bribeSplit()`
 
 **Buy Function:**
 ```solidity
 function buy(
     address assetsReceiver,
-    uint256 epochId,
+    uint256 _epochId,
     uint256 deadline,
     uint256 maxPaymentAmount
 ) external returns (uint256 paymentAmount);
 ```
 
----
-
-## 5. Bribes & BribeRouters
-
-### LSGBribe
-
-Per-strategy contract distributing rewards to voters proportionally to their voting weight.
-
+**View Functions:**
 ```solidity
-function _deposit(uint256 amount, address account) external; // Voter only
-function _withdraw(uint256 amount, address account) external; // Voter only
-function addReward(address rewardToken) external;             // Voter only
-function getReward(address account) external;                 // Anyone
-function notifyRewardAmount(address token, uint256 amount) external;
+function getPrice() public view returns (uint256);
+function getRevenueBalance() external view returns (uint256);
+function getBribeRouter() external view returns (address);
 ```
 
-Invariants:
-* `balanceOf(user)` must equal `votes[user][strategy]` in Voter
-* `totalSupply()` must equal `weights[strategy]` in Voter
+---
+
+## 5. Bribe & BribeRouter
+
+### Bribe
+
+Per-strategy contract distributing rewards to voters proportionally to their voting weight. Uses Synthetix StakingRewards model with virtual balances.
+
+```solidity
+// Constants
+uint256 public constant DURATION = 7 days;  // reward distribution period
+
+// Immutables
+address public immutable voter;  // only voter can modify balances
+
+// State
+struct Reward {
+    uint256 periodFinish;           // when current reward period ends
+    uint256 rewardRate;             // tokens per second
+    uint256 lastUpdateTime;         // last time rewards were calculated
+    uint256 rewardPerTokenStored;   // accumulated rewards per token
+}
+mapping(address => Reward) public token_RewardData;
+mapping(address => bool) public token_IsReward;
+address[] public rewardTokens;
+
+uint256 public totalSupply;                              // total virtual balance
+mapping(address => uint256) public account_Balance;      // account => virtual balance
+```
+
+**Voter-Only Functions:**
+```solidity
+function _deposit(uint256 amount, address account) external;
+function _withdraw(uint256 amount, address account) external;
+function addReward(address _rewardsToken) external;
+```
+
+**Public Functions:**
+```solidity
+function getReward(address account) external;
+function notifyRewardAmount(address _rewardsToken, uint256 reward) external;
+```
+
+**View Functions:**
+```solidity
+function left(address _rewardsToken) public view returns (uint256);
+function lastTimeRewardApplicable(address _rewardsToken) public view returns (uint256);
+function rewardPerToken(address _rewardsToken) public view returns (uint256);
+function earned(address account, address _rewardsToken) public view returns (uint256);
+function getRewardForDuration(address _rewardsToken) external view returns (uint256);
+function getRewardTokens() external view returns (address[] memory);
+```
+
+**Invariants:**
+* `account_Balance[user]` must equal `account_Strategy_Votes[user][strategy]` in Voter
+* `totalSupply` must equal `strategy_Weight[strategy]` in Voter
 
 ### BribeRouter
 
 Routes payment tokens from strategy auctions to Bribe contracts.
 
 ```solidity
-function distribute() external; // Anyone can call
+address public immutable voter;        // voter contract to lookup bribe
+address public immutable strategy;     // strategy this router serves
+address public immutable paymentToken; // token to distribute as bribes
+
+function distribute() external;
+function getBribe() external view returns (address);
 ```
 
-When balance > `Bribe.left(paymentToken)`, pushes funds to Bribe.
+When `balance > Bribe.left(paymentToken)`, pushes funds to Bribe via `notifyRewardAmount`.
 
 ---
 
 ## 6. RevenueRouter
 
-**Purpose:** Bridge between protocol revenue sources and LSGVoter.
+**Purpose:** Bridge between protocol revenue sources and Voter. Acts as the authorized `revenueSource`.
 
 ```solidity
-function flush() external returns (uint256 amount);
-function flushIfAvailable() external returns (uint256 amount);
+// Immutables
+address public immutable voter;        // voter contract to send revenue to
+address public immutable revenueToken; // token to distribute
+
+// Functions
+function flush() external returns (uint256 amount);         // Reverts if no revenue
+function flushIfAvailable() external returns (uint256 amount); // No-op if empty
 function pendingRevenue() external view returns (uint256);
 ```
 
-Usage:
+**Usage:**
 1. Set as `treasury` or `feeRecipient` in protocol contracts
 2. Revenue accumulates in router
-3. Anyone calls `flush()` to push to Voter
+3. Anyone calls `flush()` or `flushIfAvailable()` to push to Voter
 
 ---
 
@@ -246,17 +359,18 @@ Usage:
 
 ### Deployment Order
 
-1. Deploy `GovernanceToken(UNDERLYING, name, symbol)`
-2. Deploy `LSGBribeFactory()`
-3. Deploy `StrategyFactory(REVENUE_TOKEN, PAYMENT_TOKEN)`
-4. Deploy `LSGVoter(GovernanceToken, REVENUE_TOKEN, TREASURY, BribeFactory, StrategyFactory)`
-5. Deploy `RevenueRouter(REVENUE_TOKEN, Voter)`
+1. Deploy `BribeFactory()`
+2. Deploy `StrategyFactory()`
+3. Deploy `GovernanceToken(token, name, symbol)`
+4. Deploy `Voter(governanceToken, revenueToken, treasury, bribeFactory, strategyFactory)`
+5. Deploy `RevenueRouter(revenueToken, voter)`
 6. Configure:
    * `GovernanceToken.setVoter(Voter)`
-   * `LSGBribeFactory.setVoter(Voter)`
+   * `BribeFactory.setVoter(Voter)`
    * `StrategyFactory.setVoter(Voter)`
    * `Voter.setRevenueSource(RevenueRouter)`
-   * Transfer `Voter` ownership to Governor contract
+   * `Voter.setBribeSplit(bribeSplitBps)` (e.g., 2000 for 20%)
+   * Transfer `Voter` and `GovernanceToken` ownership to Governor contract
 
 ### Protocol Integration
 
@@ -265,7 +379,7 @@ Protocol Revenue Source
         ↓
    RevenueRouter  ←── flush() called by anyone
         ↓
-     LSGVoter  ←── notifyRevenue()
+      Voter  ←── notifyRevenue()
         ↓
    ┌────┴────┐
    ↓         ↓
@@ -281,19 +395,20 @@ Treasury  BuybackBurn  Builder Fund  etc.
 ```
                     ┌─────────────────────┐
                     │   Protocol Token    │
-                    │    (UNDERLYING)     │
+                    │      (token)        │
                     └─────────┬───────────┘
                               │ stake/unstake
                               ↓
                     ┌─────────────────────┐
                     │  GovernanceToken    │
                     │  (non-transferable) │
+                    │   ERC20Votes        │
                     └─────────┬───────────┘
                               │ voting power
                               ↓
 ┌──────────────┐    ┌─────────────────────┐    ┌──────────────┐
 │   Protocol   │    │                     │    │   Governor   │
-│   Revenue    │───→│     LSGVoter        │←───│   (Owner)    │
+│   Revenue    │───→│       Voter         │←───│   (Owner)    │
 │   Sources    │    │                     │    │              │
 └──────────────┘    └─────────┬───────────┘    └──────────────┘
        │                      │
@@ -304,7 +419,7 @@ Treasury  BuybackBurn  Builder Fund  etc.
 │  flush() ────────→│               STRATEGIES                │
 └──────────────┘    │  ┌─────────┐ ┌─────────┐ ┌─────────┐   │
                     │  │Strategy1│ │Strategy2│ │Strategy3│   │
-                    │  │(Auction)│ │(Auction)│ │(Custom) │   │
+                    │  │(Auction)│ │(Auction)│ │(Auction)│   │
                     │  └────┬────┘ └────┬────┘ └────┬────┘   │
                     └───────┼──────────┼──────────┼──────────┘
                             │          │          │
@@ -331,54 +446,74 @@ Treasury  BuybackBurn  Builder Fund  etc.
 
 ### Flash Loan Protection
 * GovernanceToken is non-transferable
-* Users must wait one epoch between voting and resetting
-* Voting power is tied to time-locked stake
+* Users can only vote or reset once per 7-day epoch
+* Voting power is tied to staked tokens
 
 ### Access Control
-* LSGVoter owner should be a Governor contract (not EOA)
-* Only RevenueRouter can call `notifyRevenue`
-* Only Voter can call Bribe `_deposit`/`_withdraw`
+* Voter owner should be a Governor contract (not EOA)
+* Only `revenueSource` can call `notifyRevenue`
+* Only Voter can call Bribe `_deposit`/`_withdraw`/`addReward`
+* `bribeSplit` capped at `MAX_BRIBE_SPLIT` (50%)
 
 ### Invariants
-* `totalWeight` must equal sum of all `weights[strategy]`
-* Bribe `totalSupply` must equal Voter `weights[strategy]`
-* User Bribe `balanceOf` must equal Voter `votes[user][strategy]`
+* `totalWeight` must equal sum of all `strategy_Weight[strategy]`
+* Bribe `totalSupply` must equal Voter `strategy_Weight[strategy]`
+* Bribe `account_Balance[user]` must equal Voter `account_Strategy_Votes[user][strategy]`
 
 ---
 
 ## 10. Gas Optimization
 
-* Slot packing in Strategy (Slot0 struct)
-* Single storage write for auction state updates
 * Batch distribution via `distributeRange(start, finish)`
-* View functions use memory caching
+* Batch index updates via `updateForRange(start, end)` and `updateFor(strategies[])`
+* View functions for pending revenue calculation without state changes
 
 ---
 
 ## 11. Events Summary
 
-### LSGVoter
+### Voter
 ```solidity
-event LSGVoter__StrategyAdded(address creator, address strategy, address bribe, address bribeRouter, address paymentToken, address paymentReceiver);
-event LSGVoter__StrategyKilled(address strategy);
-event LSGVoter__Voted(address voter, address strategy, uint256 weight);
-event LSGVoter__Abstained(address account, address strategy, uint256 weight);
-event LSGVoter__NotifyRevenue(address sender, uint256 amount);
-event LSGVoter__DistributeRevenue(address sender, address strategy, uint256 amount);
+event Voter__StrategyAdded(address indexed strategy, address indexed bribe, address indexed bribeRouter, address paymentToken, address paymentReceiver);
+event Voter__StrategyKilled(address indexed strategy);
+event Voter__Voted(address indexed voter, address indexed strategy, uint256 weight);
+event Voter__Abstained(address indexed account, address indexed strategy, uint256 weight);
+event Voter__NotifyRevenue(address indexed sender, uint256 amount);
+event Voter__DistributeRevenue(address indexed sender, address indexed strategy, uint256 amount);
+event Voter__BribeRewardAdded(address indexed bribe, address indexed reward);
+event Voter__RevenueSourceSet(address indexed revenueSource);
+event Voter__BribeSplitSet(uint256 bribeSplit);
 ```
 
 ### Strategy
 ```solidity
-event Strategy__Buy(address buyer, address assetsReceiver, uint256 revenueAmount, uint256 paymentAmount);
+event Strategy__Buy(address indexed buyer, address indexed assetsReceiver, uint256 revenueAmount, uint256 paymentAmount);
 ```
 
-### LSGBribe
+### Bribe
 ```solidity
-event LSGBribe__RewardAdded(address rewardToken);
-event LSGBribe__RewardNotified(address rewardToken, uint256 reward);
-event LSGBribe__Deposited(address user, uint256 amount);
-event LSGBribe__Withdrawn(address user, uint256 amount);
-event LSGBribe__RewardPaid(address user, address rewardsToken, uint256 reward);
+event Bribe__RewardAdded(address indexed rewardToken);
+event Bribe__RewardNotified(address indexed rewardToken, uint256 reward);
+event Bribe__Deposited(address indexed user, uint256 amount);
+event Bribe__Withdrawn(address indexed user, uint256 amount);
+event Bribe__RewardPaid(address indexed user, address indexed rewardsToken, uint256 reward);
+```
+
+### BribeRouter
+```solidity
+event BribeRouter__Distributed(address indexed bribe, address indexed token, uint256 amount);
+```
+
+### RevenueRouter
+```solidity
+event RevenueRouter__Flushed(address indexed caller, uint256 amount);
+```
+
+### GovernanceToken
+```solidity
+event GovernanceToken__Staked(address indexed account, uint256 amount);
+event GovernanceToken__Unstaked(address indexed account, uint256 amount);
+event GovernanceToken__VoterSet(address indexed voter);
 ```
 
 ---
@@ -412,7 +547,7 @@ The initial strategy implements a DONUT buyback mechanism via Dutch auction:
 ```
 WETH Revenue → Dutch Auction → DONUT Payment → DAO Treasury
                                     ↓
-                              20% to Bribes
+                         bribeSplit % to Bribes
 ```
 
 **Configuration:**
@@ -422,10 +557,10 @@ WETH Revenue → Dutch Auction → DONUT Payment → DAO Treasury
 | Payment Token | DONUT | Auction buyers pay in DONUT |
 | Payment Receiver | DAO Address | DONUT sent to DAO treasury |
 | Initial Price | 1,000,000 DONUT | Starting auction price |
-| Minimum Price | 100,000 DONUT | Price floor |
+| Min Init Price | 100,000 DONUT | Price floor for init price |
 | Epoch Period | 7 days | Auction duration |
-| Price Multiplier | 110% (11000 bps) | Next epoch price increase |
-| Bribe Split | 20% (2000 bps) | Portion to voter bribes |
+| Price Multiplier | 1.1e18 (110%) | Next epoch price increase |
+| Bribe Split (Voter) | 2000 bps (20%) | Portion to voter bribes |
 
 ### Revenue Flow
 
@@ -434,7 +569,7 @@ Protocol Fees (WETH)
         ↓
   RevenueRouter
         ↓ flush()
-     LSGVoter
+      Voter
         ↓ distribute()
   Buyback Strategy
         ↓ Dutch Auction
