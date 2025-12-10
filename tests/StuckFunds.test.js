@@ -242,7 +242,7 @@ describe("Stuck Funds Analysis", function () {
             await sendRevenue(ethers.utils.parseEther("1000"));
 
             // Distribute all
-            await voter.distro();
+            await voter.distributeAll();
 
             // Strategy2 gets 500 (its 50% share based on weight)
             expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("500"));
@@ -274,7 +274,7 @@ describe("Stuck Funds Analysis", function () {
 
             // Send revenue - now 100% goes to strategy2
             await sendRevenue(ethers.utils.parseEther("1000"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // Strategy2 gets 100%
             expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("1000"));
@@ -298,7 +298,7 @@ describe("Stuck Funds Analysis", function () {
             // Multiple revenue distributions - 50% gets stuck each time
             for (let i = 0; i < 5; i++) {
                 await sendRevenue(ethers.utils.parseEther("100"));
-                await voter.distro();
+                await voter.distributeAll();
             }
 
             // Strategy2 gets 250 WETH (50% of 500 total)
@@ -335,7 +335,7 @@ describe("Stuck Funds Analysis", function () {
 
             // Now revenue goes 100% to strategy2
             await sendRevenue(ethers.utils.parseEther("1000"));
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("1000"));
             expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
@@ -366,7 +366,7 @@ describe("Stuck Funds Analysis", function () {
 
             // Send revenue - 100% goes to dead strategy (stuck)
             await sendRevenue(ethers.utils.parseEther("1000"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // All stuck because only dead strategy has weight
             expect(await revenueToken.balanceOf(voter.address)).to.equal(ethers.utils.parseEther("1000"));

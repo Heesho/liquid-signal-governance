@@ -2,6 +2,8 @@
 pragma solidity 0.8.19;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import {ERC20Votes} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -11,10 +13,11 @@ import {IVoter} from "./interfaces/IVoter.sol";
 /**
  * @title GovernanceToken
  * @author heesho
- * @notice Non-transferable staked governance token. Stake underlying 1:1, clear votes before unstaking.
- *         Users stake the underlying token to receive voting power, and must clear votes before unstaking.
+ * @notice Non-transferable staked governance token with ERC20Votes support for DAO compatibility.
+ *         Stake underlying 1:1, clear votes before unstaking.
+ *         Compatible with Aragon, Tally, Snapshot, and OpenZeppelin Governor.
  */
-contract GovernanceToken is ERC20, ReentrancyGuard, Ownable {
+contract GovernanceToken is ERC20, ERC20Permit, ERC20Votes, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -50,7 +53,11 @@ contract GovernanceToken is ERC20, ReentrancyGuard, Ownable {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(address _token, string memory _name, string memory _symbol) ERC20(_name, _symbol) {
+    constructor(
+        address _token,
+        string memory _name,
+        string memory _symbol
+    ) ERC20(_name, _symbol) ERC20Permit(_name) {
         if (_token == address(0)) revert GovernanceToken__InvalidZeroAddress();
         token = _token;
     }
@@ -96,8 +103,24 @@ contract GovernanceToken is ERC20, ReentrancyGuard, Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Prevents transfers between accounts (only mint/burn allowed)
-    function _beforeTokenTransfer(address from, address to, uint256) internal pure override {
+    function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
+        super._beforeTokenTransfer(from, to, amount);
         if (from != address(0) && to != address(0)) revert GovernanceToken__TransferDisabled();
+    }
+
+    /// @dev Required override for ERC20Votes
+    function _afterTokenTransfer(address from, address to, uint256 amount) internal override(ERC20, ERC20Votes) {
+        super._afterTokenTransfer(from, to, amount);
+    }
+
+    /// @dev Required override for ERC20Votes
+    function _mint(address to, uint256 amount) internal override(ERC20, ERC20Votes) {
+        super._mint(to, amount);
+    }
+
+    /// @dev Required override for ERC20Votes
+    function _burn(address account, uint256 amount) internal override(ERC20, ERC20Votes) {
+        super._burn(account, amount);
     }
 
     /*//////////////////////////////////////////////////////////////

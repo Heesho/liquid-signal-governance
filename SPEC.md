@@ -138,9 +138,9 @@ function claimBribes(address[] memory bribes) external;
 
 **Revenue Flow:**
 ```solidity
-function notifyAndDistribute(uint256 amount) external; // Only revenueSource
+function notifyRevenue(uint256 amount) external; // Only revenueSource
 function distribute(address strategy) public;
-function distro() external; // Distribute to all
+function distributeAll() external; // Distribute to all
 ```
 
 **Admin (Governance Controlled):**
@@ -265,7 +265,7 @@ Protocol Revenue Source
         ↓
    RevenueRouter  ←── flush() called by anyone
         ↓
-     LSGVoter  ←── notifyAndDistribute()
+     LSGVoter  ←── notifyRevenue()
         ↓
    ┌────┴────┐
    ↓         ↓
@@ -336,7 +336,7 @@ Treasury  BuybackBurn  Builder Fund  etc.
 
 ### Access Control
 * LSGVoter owner should be a Governor contract (not EOA)
-* Only RevenueRouter can call `notifyAndDistribute`
+* Only RevenueRouter can call `notifyRevenue`
 * Only Voter can call Bribe `_deposit`/`_withdraw`
 
 ### Invariants
@@ -350,7 +350,7 @@ Treasury  BuybackBurn  Builder Fund  etc.
 
 * Slot packing in Strategy (Slot0 struct)
 * Single storage write for auction state updates
-* Batch distribution via `distribute(start, finish)`
+* Batch distribution via `distributeRange(start, finish)`
 * View functions use memory caching
 
 ---

@@ -2,13 +2,6 @@
 pragma solidity 0.8.19;
 
 interface IStrategy {
-    struct Slot0 {
-        uint8 locked;
-        uint16 epochId;
-        uint192 initPrice;
-        uint40 startTime;
-    }
-
     function voter() external view returns (address);
     function revenueToken() external view returns (address);
     function paymentToken() external view returns (address);
@@ -16,9 +9,11 @@ interface IStrategy {
     function epochPeriod() external view returns (uint256);
     function priceMultiplier() external view returns (uint256);
     function minInitPrice() external view returns (uint256);
+    function epochId() external view returns (uint256);
+    function initPrice() external view returns (uint256);
+    function startTime() external view returns (uint256);
 
     function getPrice() external view returns (uint256);
-    function getSlot0() external view returns (Slot0 memory);
     function getRevenueBalance() external view returns (uint256);
     function getBribeRouter() external view returns (address);
 

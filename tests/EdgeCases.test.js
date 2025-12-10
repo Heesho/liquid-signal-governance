@@ -115,7 +115,7 @@ describe("Edge Cases and Security Tests", function () {
         });
 
         it("only revenue source can notify revenue", async function () {
-            await expect(voter.connect(attacker).notifyAndDistribute(ethers.utils.parseEther("100"))).to.be.reverted;
+            await expect(voter.connect(attacker).notifyRevenue(ethers.utils.parseEther("100"))).to.be.reverted;
         });
 
         it("only voter can deposit/withdraw from bribe", async function () {
@@ -257,7 +257,7 @@ describe("Edge Cases and Security Tests", function () {
         it("should handle update functions on empty strategies", async function () {
             // No strategies exist yet
             await voter.updateAll();
-            await voter.distro();
+            await voter.distributeAll();
             // Should not revert
         });
 
@@ -281,14 +281,14 @@ describe("Edge Cases and Security Tests", function () {
             await sendRevenue(ethers.utils.parseEther("300"));
 
             // Distribute only first 2
-            await voter["distribute(uint256,uint256)"](0, 2);
+            await voter.distributeRange(0, 2);
 
             expect(await revenueToken.balanceOf(s1.strategy)).to.equal(ethers.utils.parseEther("100"));
             expect(await revenueToken.balanceOf(s2.strategy)).to.equal(ethers.utils.parseEther("100"));
             expect(await revenueToken.balanceOf(s3.strategy)).to.equal(0);
 
             // Distribute last one
-            await voter["distribute(uint256,uint256)"](2, 3);
+            await voter.distributeRange(2, 3);
             expect(await revenueToken.balanceOf(s3.strategy)).to.equal(ethers.utils.parseEther("100"));
         });
 

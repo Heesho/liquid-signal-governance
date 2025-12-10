@@ -640,7 +640,7 @@ describe("Business Logic Tests", function () {
             await voter.connect(user1).vote([s1], [100]);
             await voter.connect(user2).vote([s1], [100]);
             await sendRevenue(ethers.utils.parseEther("200"));
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(s1)).to.equal(ethers.utils.parseEther("200"));
             expect(await revenueToken.balanceOf(s2)).to.equal(0);
@@ -652,7 +652,7 @@ describe("Business Logic Tests", function () {
             await voter.connect(user2).vote([s1], [100]);
 
             await sendRevenue(ethers.utils.parseEther("200"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // s1 gets 100 (user2's 50%), s2 gets 100 (user1's 50%)
             expect(await revenueToken.balanceOf(s1)).to.equal(ethers.utils.parseEther("300"));
@@ -664,7 +664,7 @@ describe("Business Logic Tests", function () {
             await voter.connect(user2).vote([s2], [100]);
 
             await sendRevenue(ethers.utils.parseEther("200"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // s1 gets nothing new, s2 gets all 200
             expect(await revenueToken.balanceOf(s1)).to.equal(ethers.utils.parseEther("300"));
@@ -818,7 +818,7 @@ describe("Business Logic Tests", function () {
 
             const notifiedAmount = ethers.utils.parseEther("1000");
             await sendRevenue(notifiedAmount);
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(s1);
             const balance2 = await revenueToken.balanceOf(s2);

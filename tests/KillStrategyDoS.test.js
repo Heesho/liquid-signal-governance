@@ -166,7 +166,7 @@ describe("Kill Strategy - User Vote Handling", function () {
         await revenueRouter.flush();
 
         // Distribute all
-        await voter.distro();
+        await voter.distributeAll();
 
         // Strategy2 gets 500 (its 50% share)
         expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("500"));
@@ -208,7 +208,7 @@ describe("Kill Strategy - User Vote Handling", function () {
         // Send revenue - now 100% goes to strategy2
         await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("1000"));
         await revenueRouter.flush();
-        await voter.distro();
+        await voter.distributeAll();
 
         // Strategy2 gets 100%
         expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("1000"));

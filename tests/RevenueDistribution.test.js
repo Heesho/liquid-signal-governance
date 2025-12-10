@@ -113,7 +113,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             const revenueAmount = ethers.utils.parseEther("1000");
             await sendRevenue(revenueAmount);
 
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(strategy1);
             const balance2 = await revenueToken.balanceOf(strategy2);
@@ -134,7 +134,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             const revenueAmount = ethers.utils.parseEther("1000");
             await sendRevenue(revenueAmount);
 
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(strategy1);
             const balance2 = await revenueToken.balanceOf(strategy2);
@@ -157,7 +157,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             const revenueAmount = ethers.utils.parseEther("1000");
             await sendRevenue(revenueAmount);
 
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(strategy1);
             const balance2 = await revenueToken.balanceOf(strategy2);
@@ -180,7 +180,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             const revenueAmount = ethers.utils.parseEther("1000");
             await sendRevenue(revenueAmount);
 
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(strategy1);
             const balance2 = await revenueToken.balanceOf(strategy2);
@@ -217,7 +217,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             await sendRevenue(ethers.utils.parseEther("200"));
             await sendRevenue(ethers.utils.parseEther("300"));
 
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(strategy1);
             const balance2 = await revenueToken.balanceOf(strategy2);
@@ -273,7 +273,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             await sendRevenue(ethers.utils.parseEther("100"));
 
             // Now distribute both
-            await voter.distro();
+            await voter.distributeAll();
 
             // strategy1: had 50, gets additional 50 (from new 100)
             // strategy2: gets 50 (from first 100) + 50 (from second 100) = 100
@@ -446,7 +446,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             await voter.connect(user2).vote([strategy2], [100]);
 
             // Distribute both
-            await voter.distro();
+            await voter.distributeAll();
 
             // strategy1 should get ALL the 100 WETH (was only voter when revenue came)
             // strategy2 should get NOTHING from that revenue batch
@@ -468,7 +468,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             // Second revenue batch - both exist with equal weight
             await sendRevenue(ethers.utils.parseEther("100"));
 
-            await voter.distro();
+            await voter.distributeAll();
 
             // strategy1: 100 (first batch) + 50 (half of second) = 150
             // strategy2: 0 (first batch) + 50 (half of second) = 50
@@ -494,7 +494,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             // More revenue - now 100% to strategy2
             await sendRevenue(ethers.utils.parseEther("100"));
 
-            await voter.distro();
+            await voter.distributeAll();
 
             // strategy1: 50 (from first batch when they were voting)
             // strategy2: 50 (from first) + 100 (from second) = 150
@@ -563,7 +563,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             await voter.connect(user3).vote([strategy3], [100]);
 
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
 
             const balance1 = await revenueToken.balanceOf(strategy1);
             const balance2 = await revenueToken.balanceOf(strategy2);
@@ -626,7 +626,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             await revenueToken.mint(owner.address, largeAmount);
             await sendRevenue(largeAmount);
 
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(strategy1)).to.equal(largeAmount.div(2));
             expect(await revenueToken.balanceOf(strategy2)).to.equal(largeAmount.div(2));
@@ -641,7 +641,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             await voter.connect(user2).vote([strategy2], [100]);
 
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // 1% and 99%
             expect(await revenueToken.balanceOf(strategy1)).to.equal(ethers.utils.parseEther("1"));
@@ -702,7 +702,7 @@ describe("Revenue Distribution Fairness Tests", function () {
             // Total: s0=100, s1=200, s2=300, s3=200, s4=200 = 1000
 
             await sendRevenue(ethers.utils.parseEther("1000"));
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(strategies[0])).to.equal(ethers.utils.parseEther("100"));
             expect(await revenueToken.balanceOf(strategies[1])).to.equal(ethers.utils.parseEther("200"));

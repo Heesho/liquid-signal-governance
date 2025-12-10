@@ -179,8 +179,8 @@ contract Voter is ReentrancyGuard, Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Called by revenueSource to add revenue for distribution
-    /// @param amount Amount of revenueToken to distribute
-    function notifyAndDistribute(uint256 amount) external {
+    /// @param amount Amount of revenueToken to add
+    function notifyRevenue(uint256 amount) external {
         if (msg.sender != revenueSource) revert Voter__NotAuthorizedRevenueSource();
         IERC20(revenueToken).safeTransferFrom(msg.sender, address(this), amount);
         if (totalWeight == 0) {
@@ -205,15 +205,15 @@ contract Voter is ReentrancyGuard, Ownable {
     }
 
     /// @notice Distributes revenue to strategies in a range
-    function distribute(uint256 start, uint256 finish) public {
+    function distributeRange(uint256 start, uint256 finish) public {
         for (uint256 x = start; x < finish; x++) {
             distribute(strategies[x]);
         }
     }
 
     /// @notice Distributes revenue to all strategies
-    function distro() external {
-        distribute(0, strategies.length);
+    function distributeAll() external {
+        distributeRange(0, strategies.length);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -426,5 +426,17 @@ contract Voter is ReentrancyGuard, Ownable {
     /// @notice Returns strategies an account has voted for
     function getStrategyVote(address account) external view returns (address[] memory) {
         return account_StrategyVote[account];
+    }
+
+    /// @notice Returns pending revenue from index delta (not yet added to claimable)
+    /// @dev This is revenue that has been notified but not yet updated for this strategy
+    function strategy_PendingRevenue(address strategy) external view returns (uint256) {
+        uint256 _supplied = strategy_Weight[strategy];
+        if (_supplied == 0) return 0;
+
+        uint256 _delta = index - strategy_SupplyIndex[strategy];
+        if (_delta == 0) return 0;
+
+        return _supplied * _delta / 1e18;
     }
 }

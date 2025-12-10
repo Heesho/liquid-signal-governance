@@ -200,7 +200,7 @@ describe("System-Wide Tests", function () {
             // Epoch 1: Vote 100% for s1
             await voter.connect(user1).vote([s1.strategy], [100]);
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(s1.strategy)).to.equal(ethers.utils.parseEther("100"));
             expect(await revenueToken.balanceOf(s2.strategy)).to.equal(0);
@@ -210,7 +210,7 @@ describe("System-Wide Tests", function () {
             await voter.connect(user1).vote([s1.strategy, s2.strategy], [50, 50]);
 
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // s1 had 100, gets 50 more = 150 (minus any buys)
             // s2 had 0, gets 50 = 50
@@ -525,7 +525,7 @@ describe("System-Wide Tests", function () {
             expect(await voter.totalWeight()).to.equal(ethers.utils.parseEther("1000"));
 
             await sendRevenue(ethers.utils.parseEther("1000"));
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(s1.strategy)).to.equal(ethers.utils.parseEther("350"));
             expect(await revenueToken.balanceOf(s2.strategy)).to.equal(ethers.utils.parseEther("650"));
@@ -543,7 +543,7 @@ describe("System-Wide Tests", function () {
             await voter.connect(user2).vote([s1.strategy], [100]);
 
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
             expect(await revenueToken.balanceOf(s1.strategy)).to.equal(ethers.utils.parseEther("100"));
 
             // Epoch 2: User2 switches to s2
@@ -554,7 +554,7 @@ describe("System-Wide Tests", function () {
             expect(await voter.strategy_Weight(s2.strategy)).to.equal(ethers.utils.parseEther("100"));
 
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // Each gets 50 from epoch 2
             expect(await revenueToken.balanceOf(s1.strategy)).to.equal(ethers.utils.parseEther("150"));

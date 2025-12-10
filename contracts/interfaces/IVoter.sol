@@ -19,6 +19,7 @@ interface IVoter {
     function strategy_IsValid(address strategy) external view returns (bool);
     function strategy_IsAlive(address strategy) external view returns (bool);
     function strategy_Claimable(address strategy) external view returns (uint256);
+    function strategy_PendingRevenue(address strategy) external view returns (uint256);
     function account_Strategy_Votes(address account, address strategy) external view returns (uint256);
     function account_UsedWeights(address account) external view returns (uint256);
     function account_LastVoted(address account) external view returns (uint256);
@@ -26,10 +27,10 @@ interface IVoter {
     function reset() external;
     function vote(address[] calldata strategies, uint256[] calldata weights) external;
     function claimBribes(address[] memory bribes) external;
-    function notifyAndDistribute(uint256 amount) external;
+    function notifyRevenue(uint256 amount) external;
     function distribute(address strategy) external;
-    function distribute(uint256 start, uint256 finish) external;
-    function distro() external;
+    function distributeRange(uint256 start, uint256 finish) external;
+    function distributeAll() external;
     function updateFor(address[] memory strategies) external;
     function updateForRange(uint256 start, uint256 end) external;
     function updateAll() external;

@@ -141,7 +141,7 @@ Protocol revenue flows through the RevenueRouter to the Voter, which distributes
 revenueRouter.flush();
 
 // Distribute to all strategies
-voter.distro();
+voter.distributeAll();
 
 // Or distribute to specific strategy
 voter.distribute(strategyAddress);

@@ -57,7 +57,7 @@ contract RevenueRouter is ReentrancyGuard {
         amount = IERC20(revenueToken).balanceOf(address(this));
         if (amount == 0) revert RevenueRouter__NoRevenueToFlush();
         IERC20(revenueToken).safeApprove(voter, amount);
-        IVoter(voter).notifyAndDistribute(amount);
+        IVoter(voter).notifyRevenue(amount);
         emit RevenueRouter__Flushed(msg.sender, amount);
     }
 
@@ -67,7 +67,7 @@ contract RevenueRouter is ReentrancyGuard {
         amount = IERC20(revenueToken).balanceOf(address(this));
         if (amount > 0) {
             IERC20(revenueToken).safeApprove(voter, amount);
-            IVoter(voter).notifyAndDistribute(amount);
+            IVoter(voter).notifyRevenue(amount);
             emit RevenueRouter__Flushed(msg.sender, amount);
         }
     }

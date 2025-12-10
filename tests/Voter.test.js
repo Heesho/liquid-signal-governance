@@ -559,7 +559,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
             strategy2 = s2.strategy;
         });
 
-        describe("notifyAndDistribute", function () {
+        describe("notifyRevenue", function () {
             it("should send revenue to treasury when no votes", async function () {
                 const treasuryBalanceBefore = await revenueToken.balanceOf(treasury.address);
                 await sendRevenue(ethers.utils.parseEther("100"));
@@ -590,7 +590,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
             });
 
             it("should revert when called by non-revenue source", async function () {
-                await expect(voter.connect(user1).notifyAndDistribute(ethers.utils.parseEther("100")))
+                await expect(voter.connect(user1).notifyRevenue(ethers.utils.parseEther("100")))
                     .to.be.reverted;
             });
 
@@ -692,21 +692,21 @@ describe("Voter Contract - Comprehensive Tests", function () {
             });
 
             it("should distribute to range of strategies", async function () {
-                await voter["distribute(uint256,uint256)"](0, 2);
+                await voter.distributeRange(0, 2);
 
                 expect(await revenueToken.balanceOf(strategy1)).to.equal(ethers.utils.parseEther("50"));
                 expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("50"));
             });
 
             it("should distribute to partial range", async function () {
-                await voter["distribute(uint256,uint256)"](0, 1);
+                await voter.distributeRange(0, 1);
 
                 expect(await revenueToken.balanceOf(strategy1)).to.equal(ethers.utils.parseEther("50"));
                 expect(await revenueToken.balanceOf(strategy2)).to.equal(0);
             });
         });
 
-        describe("distro", function () {
+        describe("distributeAll", function () {
             beforeEach(async function () {
                 await stakeTokens(user1, ethers.utils.parseEther("100"));
                 await voter.connect(user1).vote([strategy1, strategy2], [50, 50]);
@@ -714,7 +714,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
             });
 
             it("should distribute to all strategies", async function () {
-                await voter.distro();
+                await voter.distributeAll();
 
                 expect(await revenueToken.balanceOf(strategy1)).to.equal(ethers.utils.parseEther("50"));
                 expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("50"));
@@ -826,7 +826,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
             expect(await voter.strategy_Claimable(strategy2)).to.equal(ethers.utils.parseEther("200"));
 
             // Distribute and move to next epoch
-            await voter.distro();
+            await voter.distributeAll();
             await advanceToNextEpoch();
 
             // Epoch 2: user1 switches to strategy2, user2 splits

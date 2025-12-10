@@ -492,20 +492,20 @@ describe("Voter Contract - Comprehensive Tests", function () {
             expect(await revenueToken.balanceOf(s1)).to.equal(0);
         });
 
-        it("distribute(start, finish) should distribute to range", async function () {
+        it("distributeRange(start, finish) should distribute to range", async function () {
             await sendRevenue(ethers.utils.parseEther("600"));
 
-            await voter["distribute(uint256,uint256)"](0, 2);
+            await voter.distributeRange(0, 2);
 
             expect(await revenueToken.balanceOf(s1)).to.equal(ethers.utils.parseEther("100"));
             expect(await revenueToken.balanceOf(s2)).to.equal(ethers.utils.parseEther("200"));
             expect(await revenueToken.balanceOf(s3)).to.equal(0); // Not in range
         });
 
-        it("distro() should distribute to all strategies", async function () {
+        it("distributeAll() should distribute to all strategies", async function () {
             await sendRevenue(ethers.utils.parseEther("600"));
 
-            await voter.distro();
+            await voter.distributeAll();
 
             expect(await revenueToken.balanceOf(s1)).to.equal(ethers.utils.parseEther("100"));
             expect(await revenueToken.balanceOf(s2)).to.equal(ethers.utils.parseEther("200"));
@@ -584,9 +584,9 @@ describe("Voter Contract - Comprehensive Tests", function () {
         });
     });
 
-    // ==================== NOTIFY AND DISTRIBUTE ====================
+    // ==================== NOTIFY REVENUE ====================
 
-    describe("notifyAndDistribute", function () {
+    describe("notifyRevenue", function () {
         let s1;
 
         beforeEach(async function () {
@@ -594,8 +594,8 @@ describe("Voter Contract - Comprehensive Tests", function () {
         });
 
         it("should only accept calls from revenueSource", async function () {
-            await expect(voter.notifyAndDistribute(ethers.utils.parseEther("100"))).to.be.reverted;
-            await expect(voter.connect(attacker).notifyAndDistribute(ethers.utils.parseEther("100"))).to.be.reverted;
+            await expect(voter.notifyRevenue(ethers.utils.parseEther("100"))).to.be.reverted;
+            await expect(voter.connect(attacker).notifyRevenue(ethers.utils.parseEther("100"))).to.be.reverted;
         });
 
         it("should send to treasury when totalWeight is 0", async function () {
@@ -780,7 +780,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
 
             // Fund both bribes
             await sendRevenue(ethers.utils.parseEther("100"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // Simulate strategy buys and bribe distributions
             // (This would require full integration - simplified check)
@@ -872,7 +872,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
             await voter.connect(user3).vote([s3], [1]);
 
             await sendRevenue(ethers.utils.parseEther("600"));
-            await voter.distro();
+            await voter.distributeAll();
 
             // s1: 100/600 * 600 = 100
             // s2: 200/600 * 600 = 200
@@ -1004,7 +1004,7 @@ describe("Voter Contract - Comprehensive Tests", function () {
 
             const notified = ethers.utils.parseEther("1000");
             await sendRevenue(notified);
-            await voter.distro();
+            await voter.distributeAll();
 
             const d1 = await revenueToken.balanceOf(s1);
             const d2 = await revenueToken.balanceOf(s2);
