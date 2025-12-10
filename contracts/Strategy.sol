@@ -8,7 +8,7 @@ import {IVoter} from "./interfaces/IVoter.sol";
 
 /**
  * @title Strategy
- * @author heesho
+ * @author heesho (forked and modified from Euler Finance's FeeFlow)
  * @notice Dutch auction selling revenue tokens. Price decays linearly from initPrice to 0 over epochPeriod.
  *         When bought, price resets to (paymentAmount * priceMultiplier), bounded by [minInitPrice, ABS_MAX_INIT_PRICE].
  */

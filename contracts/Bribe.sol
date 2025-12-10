@@ -8,11 +8,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title Bribe
- * @author heesho
+ * @author heesho (forked and modified from Synthetix StakingRewards)
  * @notice Distributes voting rewards to GovernanceToken holders who vote for a specific strategy.
  *         Uses virtual balances (no token deposits) - Voter calls _deposit/_withdraw when users vote.
  *         Rewards stream linearly over 7 days based on virtual balance share.
- * @dev Based on Synthetix StakingRewards pattern, modified for virtual balances.
  */
 contract Bribe is ReentrancyGuard {
     using SafeERC20 for IERC20;

@@ -380,3 +380,75 @@ event LSGBribe__Deposited(address user, uint256 amount);
 event LSGBribe__Withdrawn(address user, uint256 amount);
 event LSGBribe__RewardPaid(address user, address rewardsToken, uint256 reward);
 ```
+
+---
+
+## 12. DONUT Deployment Configuration
+
+This LSG implementation is deployed for the DONUT token on Base mainnet.
+
+### Token Addresses
+
+| Token | Address | Description |
+|-------|---------|-------------|
+| DONUT | `0xae4a37d554c6d6f3e398546d8566b25052e0169c` | Underlying governance token |
+| WETH | `0x4200000000000000000000000000000000000006` | Revenue token |
+
+### Governance Token (gDONUT)
+
+| Property | Value |
+|----------|-------|
+| Name | Governance Donut |
+| Symbol | gDONUT |
+| Underlying | DONUT |
+| Exchange Rate | 1:1 |
+
+Users stake DONUT to receive gDONUT, which grants voting power in the LSG system.
+
+### Initial Strategy: DONUT Buyback
+
+The initial strategy implements a DONUT buyback mechanism via Dutch auction:
+
+```
+WETH Revenue → Dutch Auction → DONUT Payment → DAO Treasury
+                                    ↓
+                              20% to Bribes
+```
+
+**Configuration:**
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Payment Token | DONUT | Auction buyers pay in DONUT |
+| Payment Receiver | DAO Address | DONUT sent to DAO treasury |
+| Initial Price | 1,000,000 DONUT | Starting auction price |
+| Minimum Price | 100,000 DONUT | Price floor |
+| Epoch Period | 7 days | Auction duration |
+| Price Multiplier | 110% (11000 bps) | Next epoch price increase |
+| Bribe Split | 20% (2000 bps) | Portion to voter bribes |
+
+### Revenue Flow
+
+```
+Protocol Fees (WETH)
+        ↓
+  RevenueRouter
+        ↓ flush()
+     LSGVoter
+        ↓ distribute()
+  Buyback Strategy
+        ↓ Dutch Auction
+   DONUT Payment
+    ↓         ↓
+  80%       20%
+   ↓         ↓
+  DAO    BribeRouter
+Treasury      ↓
+           Bribe
+             ↓
+         gDONUT Voters
+```
+
+### Ownership
+
+After deployment, ownership of Voter and GovernanceToken contracts is transferred to the DAO address for decentralized governance control.

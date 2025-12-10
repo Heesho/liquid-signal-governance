@@ -233,6 +233,48 @@ liquid-signal/
 
 Currently configured for **Base Chain** (Chain ID: 8453)
 
+## DONUT Deployment
+
+This deployment is configured for the DONUT token on Base mainnet:
+
+| Contract | Address |
+|----------|---------|
+| DONUT Token | `0xae4a37d554c6d6f3e398546d8566b25052e0169c` |
+| Revenue Token | WETH (`0x4200000000000000000000000000000000000006`) |
+
+### Governance Token
+
+- **Name**: Governance Donut
+- **Symbol**: gDONUT
+- **Underlying**: DONUT (1:1 staking ratio)
+
+### Initial Strategy (DONUT Buyback)
+
+The initial strategy is configured as a DONUT buyback auction:
+
+| Parameter | Value |
+|-----------|-------|
+| Payment Token | DONUT |
+| Payment Receiver | DAO Address |
+| Initial Price | 1,000,000 DONUT |
+| Minimum Price | 100,000 DONUT |
+| Epoch Period | 7 days |
+| Price Multiplier | 110% |
+| Bribe Split | 20% |
+
+**How it works:**
+1. Protocol revenue (WETH) flows to the Voter contract
+2. Revenue is distributed to strategies based on vote weights
+3. The buyback strategy auctions WETH via Dutch auction
+4. Auction winners pay in DONUT tokens
+5. DONUT payments are sent to the DAO treasury
+6. 20% of DONUT payments go to voters as bribes
+
+This creates a sustainable buyback mechanism where:
+- WETH revenue is sold for DONUT
+- DONUT flows back to the DAO
+- Voters are incentivized to participate via bribe rewards
+
 ## License
 
 See LICENSE file for details.

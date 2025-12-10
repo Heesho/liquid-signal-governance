@@ -12,7 +12,7 @@ import {IStrategyFactory} from "./interfaces/IStrategyFactory.sol";
 
 /**
  * @title Voter
- * @author heesho
+ * @author heesho (forked and modified from Andre Cronje's Solidly)
  * @notice Core governance contract that manages voting on strategies and distributes revenue proportionally.
  *         Users vote with their governance token balance to direct revenue to strategies.
  *         Revenue is distributed pro-rata based on strategy weight (total votes).
