@@ -1,197 +1,514 @@
 const { ethers } = require("hardhat");
+const hre = require("hardhat");
 
-async function main() {
-  const [deployer] = await ethers.getSigners();
+// Constants
+const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
+const convert = (amount, decimals) => ethers.utils.parseUnits(amount, decimals);
+const divDec = (amount, decimals = 18) => amount / 10 ** decimals;
+const one = convert("1", 18);
+const onePointTwo = convert("1.2", 18);
+const oneThousand = convert("1000", 18);
+const ADDRESS_ZERO = "0x0000000000000000000000000000000000000000";
 
-  console.log("Deploying contracts with account:", deployer.address);
-  console.log("Account balance:", (await deployer.getBalance()).toString());
+// External Addresses (Base Mainnet)
+const DAO_ADDRESS = "0x69399790f5ef59d5074b7137C5De795837396444";
+const GLAZE_CORP_ADDRESS = "";
 
-  // =============================================================================
-  // CONFIGURATION
-  // =============================================================================
+// Token Addresses (Base Mainnet)
+const DONUT = "0xae4a37d554c6d6f3e398546d8566b25052e0169c";
+const WETH = "0x4200000000000000000000000000000000000006";
+const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+const DONUT_ETH_LP = "0xD1DbB2E56533C55C3A637D13C53aeEf65c5D5703";
 
-  // DONUT token on Base mainnet
-  const DONUT_TOKEN = "0xae4a37d554c6d6f3e398546d8566b25052e0169c";
+// Deployed Contract Addresses (paste after deployment)
+const BRIBE_FACTORY = "0x49C0a641b5B3b76Cc4F0a429709F08eEE022BAea";
+const STRATEGY_FACTORY = "0x03faCE143ECe133BD1A229B1591055a9Fcd604a7";
+const GOVERNANCE_TOKEN = "0xFbE43EF88274fC7C5136298157272510bB634D47";
+const VOTER = "0xfeA7231547bd2ccB1Db85069EFA14DE87927a3b2";
+const REVENUE_ROUTER = "0xc3B0C178204fdDDFcfEbf150a02DDd4949dEe141";
+const MULTICALL = "0x8fB5378DdA99F0E7395F483045db6D2C32456a08";
 
-  // Revenue token - WETH on Base mainnet
-  const WETH = "0x4200000000000000000000000000000000000006";
+// STRATEGY 0
+// Buy DONUT and send to DAO
+const STRATEGY_DESCRIPTION_0 = "Buy DONUT and send to DAO";
+const PAYMENT_TOKEN_0 = DONUT;
+const PAYMENT_RECEIVER_0 = DAO_ADDRESS;
+const INIT_PRICE_0 = convert("5000", 18); // 5000 DONUT
+const EPOCH_PERIOD_0 = 24 * 60 * 60; // 1 Day
+const PRICE_MULTIPLIER_0 = convert("1.2", 18); // 120%
+const MIN_INIT_PRICE_0 = convert("5000", 18); // 5000 DONUT
+const STRATEGY_0 = "0xFA995AD01489BD8CBDeeF7DCcB5f6Da7E7Feb297";
+const BRIBE_0 = "0xCeb774dCa56964547b98C88C39a5189d1f449cD0";
+const BRIBE_ROUTER_0 = "0x3E4de31F1ff82230AB22Bd0331f17216D66415aD";
 
-  // Treasury address - receives revenue when no votes exist
-  // IMPORTANT: Set this to your desired treasury address before deploying
-  const TREASURY = deployer.address; // Default to deployer, change as needed
+// STRATEGY 1
+// Buy DONUT-ETH LP and send to DAO
+const STRATEGY_DESCRIPTION_1 = "Buy DONUT-ETH LP and send to DAO";
+const PAYMENT_TOKEN_1 = DONUT_ETH_LP;
+const PAYMENT_RECEIVER_1 = DAO_ADDRESS;
+const INIT_PRICE_1 = convert("2", 18); // 2 DONUT-ETH LP
+const EPOCH_PERIOD_1 = 24 * 60 * 60; // 1 Day
+const PRICE_MULTIPLIER_1 = convert("1.2", 18); // 120%
+const MIN_INIT_PRICE_1 = convert("2", 18); // 2 DONUT-ETH LP
+const STRATEGY_1 = "0x361266B1aacCa78C6ea5DF92313c39186A0fC7f6";
+const BRIBE_1 = "0x39634926f255abB4cC6d2E5fa00c6a1e3a454313";
+const BRIBE_ROUTER_1 = "0x356d05cEBe677F415b1c830404a0005373D5832F";
 
-  // DAO address - will receive ownership of contracts after deployment
-  // IMPORTANT: Set this to your DAO/multisig address before deploying
-  const DAO_ADDRESS = "0x0000000000000000000000000000000000000000"; // UPDATE THIS
+// STRATEGY 2
+// Buy USDC and send to DAO
+const STRATEGY_DESCRIPTION_2 = "Buy USDC and send to DAO";
+const PAYMENT_TOKEN_2 = USDC;
+const PAYMENT_RECEIVER_2 = DAO_ADDRESS;
+const INIT_PRICE_2 = convert("100", 6); // 2 USDC
+const EPOCH_PERIOD_2 = 24 * 60 * 60; // 1 Day
+const PRICE_MULTIPLIER_2 = convert("1.2", 18); // 120%
+const MIN_INIT_PRICE_2 = convert("100", 6); // 2 USDC
+const STRATEGY_2 = "0xBBbd28D116A4DdCb42336569F0D0a43C423BBC69";
+const BRIBE_2 = "0xCdc9F01Fe25F837228D6Be8d4B823cC9096573aA";
+const BRIBE_ROUTER_2 = "0x927C923385dF96E06B018D02151f006B7179bAF3";
 
-  // Initial strategy (auction) configuration
-  const STRATEGY_CONFIG = {
-    paymentToken: DONUT_TOKEN, // Buy DONUT
-    paymentReceiver: DAO_ADDRESS, // Send DONUT to DAO
-    initPrice: ethers.utils.parseEther("1000000"), // Initial auction price (1M DONUT)
-    epochPeriod: 7 * 24 * 60 * 60, // 7 days in seconds
-    priceMultiplier: 11000, // 110% - price multiplier after successful auction
-    minInitPrice: ethers.utils.parseEther("100000"), // Minimum price (100K DONUT)
-  };
+// Default Strategy and Bribe
+const PAYMENT_TOKEN = PAYMENT_TOKEN_2;
+const PAYMENT_RECEIVER = PAYMENT_RECEIVER_2;
+const INIT_PRICE = INIT_PRICE_2;
+const EPOCH_PERIOD = EPOCH_PERIOD_2;
+const PRICE_MULTIPLIER = PRICE_MULTIPLIER_2;
+const MIN_INIT_PRICE = MIN_INIT_PRICE_2;
+const STRATEGY = STRATEGY_2;
+const BRIBE = BRIBE_2;
+const BRIBE_ROUTER = BRIBE_ROUTER_2;
 
-  // Governance token configuration
-  const GOVERNANCE_TOKEN_NAME = "Governance Donut";
-  const GOVERNANCE_TOKEN_SYMBOL = "gDONUT";
+// Contract Variables
+let bribeFactory, strategyFactory;
+let governanceToken, voter;
+let revenueRouter, multicall;
+let strategy, bribe, bribeRouter;
 
-  // =============================================================================
-  // DEPLOYMENT
-  // =============================================================================
-
-  console.log("\n--- Starting Deployment ---\n");
-
-  // 1. Deploy BribeFactory
-  console.log("1. Deploying BribeFactory...");
-  const BribeFactory = await ethers.getContractFactory("BribeFactory");
-  const bribeFactory = await BribeFactory.deploy();
-  await bribeFactory.deployed();
-  console.log("   BribeFactory deployed to:", bribeFactory.address);
-
-  // 2. Deploy StrategyFactory
-  console.log("2. Deploying StrategyFactory...");
-  const StrategyFactory = await ethers.getContractFactory("StrategyFactory");
-  const strategyFactory = await StrategyFactory.deploy();
-  await strategyFactory.deployed();
-  console.log("   StrategyFactory deployed to:", strategyFactory.address);
-
-  // 3. Deploy GovernanceToken (gDONUT)
-  console.log("3. Deploying GovernanceToken...");
-  const GovernanceToken = await ethers.getContractFactory("GovernanceToken");
-  const governanceToken = await GovernanceToken.deploy(
-    DONUT_TOKEN,
-    GOVERNANCE_TOKEN_NAME,
-    GOVERNANCE_TOKEN_SYMBOL
-  );
-  await governanceToken.deployed();
-  console.log("   GovernanceToken deployed to:", governanceToken.address);
-
-  // 4. Deploy Voter
-  console.log("4. Deploying Voter...");
-  const Voter = await ethers.getContractFactory("Voter");
-  const voter = await Voter.deploy(
-    governanceToken.address,
-    WETH,
-    TREASURY,
-    bribeFactory.address,
-    strategyFactory.address
-  );
-  await voter.deployed();
-  console.log("   Voter deployed to:", voter.address);
-
-  // 5. Set voter on GovernanceToken
-  console.log("5. Setting voter on GovernanceToken...");
-  const setVoterTx = await governanceToken.setVoter(voter.address);
-  await setVoterTx.wait();
-  console.log("   Voter set on GovernanceToken");
-
-  // 6. Deploy RevenueRouter
-  console.log("6. Deploying RevenueRouter...");
-  const RevenueRouter = await ethers.getContractFactory("RevenueRouter");
-  const revenueRouter = await RevenueRouter.deploy(WETH, voter.address);
-  await revenueRouter.deployed();
-  console.log("   RevenueRouter deployed to:", revenueRouter.address);
-
-  // 7. Set revenue source on Voter
-  console.log("7. Setting revenue source on Voter...");
-  const setRevenueSourceTx = await voter.setRevenueSource(revenueRouter.address);
-  await setRevenueSourceTx.wait();
-  console.log("   Revenue source set on Voter");
-
-  // 8. Set bribe split to 20%
-  console.log("8. Setting bribe split to 20%...");
-  const setBribeSplitTx = await voter.setBribeSplit(2000); // 2000 = 20% in basis points
-  await setBribeSplitTx.wait();
-  console.log("   Bribe split set to 20%");
-
-  // 9. Deploy Multicall (optional but recommended for frontend)
-  console.log("9. Deploying Multicall...");
-  const Multicall = await ethers.getContractFactory("Multicall");
-  const multicall = await Multicall.deploy(voter.address);
-  await multicall.deployed();
-  console.log("   Multicall deployed to:", multicall.address);
-
-  // 10. Add initial strategy (auction)
-  console.log("10. Adding initial strategy (auction)...");
-  const addStrategyTx = await voter.addStrategy(
-    STRATEGY_CONFIG.paymentToken,
-    STRATEGY_CONFIG.paymentReceiver,
-    STRATEGY_CONFIG.initPrice,
-    STRATEGY_CONFIG.epochPeriod,
-    STRATEGY_CONFIG.priceMultiplier,
-    STRATEGY_CONFIG.minInitPrice
-  );
-  const addStrategyReceipt = await addStrategyTx.wait();
-  const strategyAddedEvent = addStrategyReceipt.events?.find(e => e.event === "Voter__StrategyAdded");
-  const strategyAddress = strategyAddedEvent?.args?.strategy;
-  const bribeAddress = strategyAddedEvent?.args?.bribe;
-  const bribeRouterAddress = strategyAddedEvent?.args?.bribeRouter;
-  console.log("   Strategy deployed to:", strategyAddress);
-  console.log("   Bribe deployed to:", bribeAddress);
-  console.log("   BribeRouter deployed to:", bribeRouterAddress);
-
-  // 11. Transfer ownership to DAO
-  if (DAO_ADDRESS !== "0x0000000000000000000000000000000000000000") {
-    console.log("11. Transferring ownership to DAO...");
-
-    // Transfer Voter ownership
-    const transferVoterTx = await voter.transferOwnership(DAO_ADDRESS);
-    await transferVoterTx.wait();
-    console.log("   Voter ownership transferred to:", DAO_ADDRESS);
-
-    // Transfer GovernanceToken ownership
-    const transferGovTokenTx = await governanceToken.transferOwnership(DAO_ADDRESS);
-    await transferGovTokenTx.wait();
-    console.log("   GovernanceToken ownership transferred to:", DAO_ADDRESS);
-  } else {
-    console.log("11. Skipping ownership transfer (DAO_ADDRESS not set)");
-    console.log("   WARNING: Update DAO_ADDRESS and transfer ownership manually!");
+async function getContracts() {
+  if (BRIBE_FACTORY) {
+    bribeFactory = await ethers.getContractAt(
+      "contracts/BribeFactory.sol:BribeFactory",
+      BRIBE_FACTORY
+    );
+  }
+  if (STRATEGY_FACTORY) {
+    strategyFactory = await ethers.getContractAt(
+      "contracts/StrategyFactory.sol:StrategyFactory",
+      STRATEGY_FACTORY
+    );
+  }
+  if (GOVERNANCE_TOKEN) {
+    governanceToken = await ethers.getContractAt(
+      "contracts/GovernanceToken.sol:GovernanceToken",
+      GOVERNANCE_TOKEN
+    );
+  }
+  if (VOTER) {
+    voter = await ethers.getContractAt("contracts/Voter.sol:Voter", VOTER);
+  }
+  if (REVENUE_ROUTER) {
+    revenueRouter = await ethers.getContractAt(
+      "contracts/RevenueRouter.sol:RevenueRouter",
+      REVENUE_ROUTER
+    );
+  }
+  if (MULTICALL) {
+    multicall = await ethers.getContractAt(
+      "contracts/Multicall.sol:Multicall",
+      MULTICALL
+    );
+  }
+  if (STRATEGY) {
+    strategy = await ethers.getContractAt(
+      "contracts/Strategy.sol:Strategy",
+      STRATEGY
+    );
+  }
+  if (BRIBE) {
+    bribe = await ethers.getContractAt("contracts/Bribe.sol:Bribe", BRIBE);
+  }
+  if (BRIBE_ROUTER) {
+    bribeRouter = await ethers.getContractAt(
+      "contracts/BribeRouter.sol:BribeRouter",
+      BRIBE_ROUTER
+    );
   }
 
-  // =============================================================================
-  // DEPLOYMENT SUMMARY
-  // =============================================================================
+  console.log("Contracts Retrieved");
+}
 
-  console.log("\n--- Deployment Complete ---\n");
-  console.log("Contract Addresses:");
-  console.log("==================");
+// =============================================================================
+// DEPLOY FUNCTIONS
+// =============================================================================
+
+async function deployBribeFactory() {
+  console.log("Starting BribeFactory Deployment");
+  const bribeFactoryArtifact = await ethers.getContractFactory("BribeFactory");
+  const bribeFactoryContract = await bribeFactoryArtifact.deploy({
+    gasPrice: ethers.gasPrice,
+  });
+  bribeFactory = await bribeFactoryContract.deployed();
+  await sleep(5000);
+  console.log("BribeFactory Deployed at:", bribeFactory.address);
+}
+
+async function verifyBribeFactory() {
+  console.log("Starting BribeFactory Verification");
+  await hre.run("verify:verify", {
+    address: bribeFactory.address,
+    contract: "contracts/BribeFactory.sol:BribeFactory",
+  });
+  console.log("BribeFactory Verified");
+}
+
+async function deployStrategyFactory() {
+  console.log("Starting StrategyFactory Deployment");
+  const strategyFactoryArtifact = await ethers.getContractFactory(
+    "StrategyFactory"
+  );
+  const strategyFactoryContract = await strategyFactoryArtifact.deploy({
+    gasPrice: ethers.gasPrice,
+  });
+  strategyFactory = await strategyFactoryContract.deployed();
+  await sleep(5000);
+  console.log("StrategyFactory Deployed at:", strategyFactory.address);
+}
+
+async function verifyStrategyFactory() {
+  console.log("Starting StrategyFactory Verification");
+  await hre.run("verify:verify", {
+    address: strategyFactory.address,
+    contract: "contracts/StrategyFactory.sol:StrategyFactory",
+  });
+  console.log("StrategyFactory Verified");
+}
+
+async function deployGovernanceToken() {
+  console.log("Starting GovernanceToken Deployment");
+  const governanceTokenArtifact = await ethers.getContractFactory(
+    "GovernanceToken"
+  );
+  const governanceTokenContract = await governanceTokenArtifact.deploy(
+    DONUT,
+    "Governance Donut",
+    "gDONUT",
+    { gasPrice: ethers.gasPrice }
+  );
+  governanceToken = await governanceTokenContract.deployed();
+  await sleep(5000);
+  console.log("GovernanceToken Deployed at:", governanceToken.address);
+}
+
+async function verifyGovernanceToken() {
+  console.log("Starting GovernanceToken Verification");
+  await hre.run("verify:verify", {
+    address: governanceToken.address,
+    contract: "contracts/GovernanceToken.sol:GovernanceToken",
+    constructorArguments: [DONUT, "Governance Donut", "gDONUT"],
+  });
+  console.log("GovernanceToken Verified");
+}
+
+async function deployVoter() {
+  console.log("Starting Voter Deployment");
+  const voterArtifact = await ethers.getContractFactory("Voter");
+  const voterContract = await voterArtifact.deploy(
+    governanceToken.address,
+    WETH,
+    DAO_ADDRESS,
+    bribeFactory.address,
+    strategyFactory.address,
+    { gasPrice: ethers.gasPrice }
+  );
+  voter = await voterContract.deployed();
+  await sleep(5000);
+  console.log("Voter Deployed at:", voter.address);
+}
+
+async function verifyVoter() {
+  console.log("Starting Voter Verification");
+  await hre.run("verify:verify", {
+    address: voter.address,
+    contract: "contracts/Voter.sol:Voter",
+    constructorArguments: [
+      governanceToken.address,
+      WETH,
+      DAO_ADDRESS,
+      bribeFactory.address,
+      strategyFactory.address,
+    ],
+  });
+  console.log("Voter Verified");
+}
+
+async function deployRevenueRouter() {
+  console.log("Starting RevenueRouter Deployment");
+  const revenueRouterArtifact = await ethers.getContractFactory(
+    "RevenueRouter"
+  );
+  const revenueRouterContract = await revenueRouterArtifact.deploy(
+    WETH,
+    voter.address,
+    { gasPrice: ethers.gasPrice }
+  );
+  revenueRouter = await revenueRouterContract.deployed();
+  await sleep(5000);
+  console.log("RevenueRouter Deployed at:", revenueRouter.address);
+}
+
+async function verifyRevenueRouter() {
+  console.log("Starting RevenueRouter Verification");
+  await hre.run("verify:verify", {
+    address: revenueRouter.address,
+    contract: "contracts/RevenueRouter.sol:RevenueRouter",
+    constructorArguments: [WETH, voter.address],
+  });
+  console.log("RevenueRouter Verified");
+}
+
+async function deployMulticall() {
+  console.log("Starting Multicall Deployment");
+  const multicallArtifact = await ethers.getContractFactory("Multicall");
+  const multicallContract = await multicallArtifact.deploy(voter.address, {
+    gasPrice: ethers.gasPrice,
+  });
+  multicall = await multicallContract.deployed();
+  await sleep(5000);
+  console.log("Multicall Deployed at:", multicall.address);
+}
+
+async function verifyMulticall() {
+  console.log("Starting Multicall Verification");
+  await hre.run("verify:verify", {
+    address: multicall.address,
+    contract: "contracts/Multicall.sol:Multicall",
+    constructorArguments: [voter.address],
+  });
+  console.log("Multicall Verified");
+}
+
+// =============================================================================
+// CONFIGURATION FUNCTIONS
+// =============================================================================
+
+async function setVoterOnGovernanceToken() {
+  console.log("Setting Voter on GovernanceToken...");
+  const tx = await governanceToken.setVoter(voter.address);
+  await tx.wait();
+  console.log("Voter set on GovernanceToken");
+}
+
+async function setRevenueSource() {
+  console.log("Setting Revenue Source on Voter...");
+  const tx = await voter.setRevenueSource(revenueRouter.address);
+  await tx.wait();
+  console.log("Revenue Source set on Voter");
+}
+
+async function setBribeSplit() {
+  console.log("Setting Bribe Split to 20%...");
+  const tx = await voter.setBribeSplit(2000); // 2000 = 20% in basis points
+  await tx.wait();
+  console.log("Bribe Split set to 20%");
+}
+
+async function addStrategy() {
+  console.log("Adding Strategy (Auction)...");
+  const tx = await voter.addStrategy(
+    PAYMENT_TOKEN, // paymentToken
+    PAYMENT_RECEIVER, // paymentReceiver
+    INIT_PRICE, // initPrice
+    EPOCH_PERIOD, // epochPeriod
+    PRICE_MULTIPLIER, // priceMultiplier
+    MIN_INIT_PRICE // minInitPrice
+  );
+  const receipt = await tx.wait();
+  const event = receipt.events?.find((e) => e.event === "Voter__StrategyAdded");
+  strategy = await ethers.getContractAt(
+    "contracts/Strategy.sol:Strategy",
+    event?.args?.strategy
+  );
+  bribe = await ethers.getContractAt(
+    "contracts/Bribe.sol:Bribe",
+    event?.args?.bribe
+  );
+  bribeRouter = await ethers.getContractAt(
+    "contracts/BribeRouter.sol:BribeRouter",
+    event?.args?.bribeRouter
+  );
+  console.log("Strategy Deployed at:", strategy.address);
+  console.log("Bribe Deployed at:", bribe.address);
+  console.log("BribeRouter Deployed at:", bribeRouter.address);
+}
+
+async function transferOwnershipToDAO() {
+  console.log("Transferring Voter ownership to DAO...");
+  const tx1 = await voter.transferOwnership(DAO_ADDRESS);
+  await tx1.wait();
+  console.log("Voter ownership transferred to:", DAO_ADDRESS);
+
+  console.log("Transferring GovernanceToken ownership to DAO...");
+  const tx2 = await governanceToken.transferOwnership(DAO_ADDRESS);
+  await tx2.wait();
+  console.log("GovernanceToken ownership transferred to:", DAO_ADDRESS);
+}
+
+async function killStrategy(strategyAddress) {
+  console.log("Killing Strategy:", strategyAddress);
+  const tx = await voter.killStrategy(strategyAddress);
+  await tx.wait();
+  console.log("Strategy Killed:", strategyAddress);
+}
+
+// =============================================================================
+// PRINT FUNCTIONS
+// =============================================================================
+
+async function printCoreAddresses() {
+  console.log("**************************************************************");
   console.log("BribeFactory:     ", bribeFactory.address);
   console.log("StrategyFactory:  ", strategyFactory.address);
   console.log("GovernanceToken:  ", governanceToken.address);
   console.log("Voter:            ", voter.address);
   console.log("RevenueRouter:    ", revenueRouter.address);
   console.log("Multicall:        ", multicall.address);
-  console.log("\nInitial Strategy:");
-  console.log("==================");
-  console.log("Strategy:         ", strategyAddress);
-  console.log("Bribe:            ", bribeAddress);
-  console.log("BribeRouter:      ", bribeRouterAddress);
-  console.log("\nExternal Addresses:");
-  console.log("==================");
-  console.log("DONUT Token:      ", DONUT_TOKEN);
-  console.log("Revenue Token:    ", WETH);
-  console.log("Treasury:         ", TREASURY);
+  console.log("**************************************************************");
+}
+
+async function printStrategyAddresses() {
+  console.log("**************************************************************");
+  console.log("Strategy:         ", strategy?.address || "Not deployed");
+  console.log("Bribe:            ", bribe?.address || "Not deployed");
+  console.log("BribeRouter:      ", bribeRouter?.address || "Not deployed");
+  console.log("**************************************************************");
+}
+
+async function printExternalAddresses() {
+  console.log("**************************************************************");
+  console.log("DONUT:            ", DONUT);
+  console.log("WETH:             ", WETH);
+  console.log("USDC:             ", USDC);
+  console.log("DONUT_ETH_LP:     ", DONUT_ETH_LP);
   console.log("DAO:              ", DAO_ADDRESS);
+  console.log("**************************************************************");
+}
 
-  console.log("\n--- Verification Commands ---\n");
-  console.log(`npx hardhat verify --network mainnet ${bribeFactory.address}`);
-  console.log(`npx hardhat verify --network mainnet ${strategyFactory.address}`);
-  console.log(`npx hardhat verify --network mainnet ${governanceToken.address} "${DONUT_TOKEN}" "${GOVERNANCE_TOKEN_NAME}" "${GOVERNANCE_TOKEN_SYMBOL}"`);
-  console.log(`npx hardhat verify --network mainnet ${voter.address} "${governanceToken.address}" "${WETH}" "${TREASURY}" "${bribeFactory.address}" "${strategyFactory.address}"`);
-  console.log(`npx hardhat verify --network mainnet ${revenueRouter.address} "${WETH}" "${voter.address}"`);
-  console.log(`npx hardhat verify --network mainnet ${multicall.address} "${voter.address}"`);
+async function printAllAddresses() {
+  console.log(
+    "\n==================== LIQUID SIGNAL DEPLOYMENT ====================\n"
+  );
 
-  return {
-    bribeFactory: bribeFactory.address,
-    strategyFactory: strategyFactory.address,
-    governanceToken: governanceToken.address,
-    voter: voter.address,
-    revenueRouter: revenueRouter.address,
-    multicall: multicall.address,
-  };
+  console.log("--- External Addresses ---");
+  console.log("DAO:              ", DAO_ADDRESS);
+  console.log("DONUT:            ", DONUT);
+  console.log("WETH:             ", WETH);
+  console.log("USDC:             ", USDC);
+  console.log("DONUT_ETH_LP:     ", DONUT_ETH_LP);
+
+  console.log("\n--- Core Contracts ---");
+  console.log("BribeFactory:     ", BRIBE_FACTORY);
+  console.log("StrategyFactory:  ", STRATEGY_FACTORY);
+  console.log("GovernanceToken:  ", GOVERNANCE_TOKEN);
+  console.log("Voter:            ", VOTER);
+  console.log("RevenueRouter:    ", REVENUE_ROUTER);
+  console.log("Multicall:        ", MULTICALL);
+
+  console.log("\n--- Strategy 0: " + STRATEGY_DESCRIPTION_0 + " ---");
+  console.log("Strategy:         ", STRATEGY_0);
+  console.log("Bribe:            ", BRIBE_0);
+  console.log("BribeRouter:      ", BRIBE_ROUTER_0);
+
+  console.log("\n--- Strategy 1: " + STRATEGY_DESCRIPTION_1 + " ---");
+  console.log("Strategy:         ", STRATEGY_1);
+  console.log("Bribe:            ", BRIBE_1);
+  console.log("BribeRouter:      ", BRIBE_ROUTER_1);
+
+  console.log("\n--- Strategy 2: " + STRATEGY_DESCRIPTION_2 + " ---");
+  console.log("Strategy:         ", STRATEGY_2);
+  console.log("Bribe:            ", BRIBE_2);
+  console.log("BribeRouter:      ", BRIBE_ROUTER_2);
+
+  console.log(
+    "\n===================================================================\n"
+  );
+}
+
+// =============================================================================
+// MAIN
+// =============================================================================
+
+async function main() {
+  const [wallet] = await ethers.getSigners();
+  console.log("Using wallet:", wallet.address);
+  console.log("Account balance:", (await wallet.getBalance()).toString());
+
+  await getContracts();
+
+  //===================================================================
+  // Deploy Core Contracts
+  //===================================================================
+
+  // console.log("Starting Core Deployment");
+  // await deployBribeFactory();
+  // await deployStrategyFactory();
+  // await deployGovernanceToken();
+  // await deployVoter();
+  // await deployRevenueRouter();
+  // await deployMulticall();
+  // await printCoreAddresses();
+
+  //===================================================================
+  // Verify Core Contracts
+  //===================================================================
+
+  // console.log("Starting Core Verification");
+  // await verifyBribeFactory();
+  // await verifyStrategyFactory();
+  // await verifyGovernanceToken();
+  // await verifyVoter();
+  // await verifyRevenueRouter();
+  // await verifyMulticall();
+  // console.log("Core Contracts Verified");
+
+  //===================================================================
+  // Configure Contracts
+  //===================================================================
+
+  // console.log("Starting Configuration");
+  // await setVoterOnGovernanceToken();
+  // await setRevenueSource();
+  // await setBribeSplit();
+  // console.log("Configuration Complete");
+
+  //===================================================================
+  // Add Strategy
+  //===================================================================
+
+  // console.log("Starting Strategy Deployment");
+  // await addStrategy();
+  // await printStrategyAddresses();
+
+  //===================================================================
+  // Transfer Ownership
+  //===================================================================
+
+  // console.log("Starting Ownership Transfer");
+  // await transferOwnershipToDAO();
+  // console.log("Ownership Transfer Complete");
+
+  //===================================================================
+  // Kill Strategy
+  //===================================================================
+
+  // await killStrategy(STRATEGY_0); // Kill DONUT strategy
+  // await killStrategy(STRATEGY_1); // Kill DONUT-ETH LP strategy
+  // await killStrategy(STRATEGY_2); // Kill USDC strategy
+
+  //===================================================================
+  // Print Deployment
+  //===================================================================
+
+  await printAllAddresses();
 }
 
 main()
