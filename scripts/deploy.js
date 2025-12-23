@@ -11,22 +11,23 @@ const oneThousand = convert("1000", 18);
 const ADDRESS_ZERO = "0x0000000000000000000000000000000000000000";
 
 // External Addresses (Base Mainnet)
-const DAO_ADDRESS = "0x69399790f5ef59d5074b7137C5De795837396444";
+const DAO_ADDRESS = "0x7a8C895E7826F66e1094532cB435Da725dc3868f";
 const GLAZE_CORP_ADDRESS = "";
 
 // Token Addresses (Base Mainnet)
 const DONUT = "0xae4a37d554c6d6f3e398546d8566b25052e0169c";
 const WETH = "0x4200000000000000000000000000000000000006";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+const CBBTC = "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf";
 const DONUT_ETH_LP = "0xD1DbB2E56533C55C3A637D13C53aeEf65c5D5703";
 
 // Deployed Contract Addresses (paste after deployment)
-const BRIBE_FACTORY = "0x49C0a641b5B3b76Cc4F0a429709F08eEE022BAea";
-const STRATEGY_FACTORY = "0x03faCE143ECe133BD1A229B1591055a9Fcd604a7";
-const GOVERNANCE_TOKEN = "0xFbE43EF88274fC7C5136298157272510bB634D47";
-const VOTER = "0xfeA7231547bd2ccB1Db85069EFA14DE87927a3b2";
-const REVENUE_ROUTER = "0xc3B0C178204fdDDFcfEbf150a02DDd4949dEe141";
-const MULTICALL = "0x8fB5378DdA99F0E7395F483045db6D2C32456a08";
+const BRIBE_FACTORY = "";
+const STRATEGY_FACTORY = "";
+const GOVERNANCE_TOKEN = "";
+const VOTER = "";
+const REVENUE_ROUTER = "";
+const MULTICALL = "";
 
 // STRATEGY 0
 // Buy DONUT and send to DAO
@@ -37,9 +38,9 @@ const INIT_PRICE_0 = convert("5000", 18); // 5000 DONUT
 const EPOCH_PERIOD_0 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_0 = convert("1.2", 18); // 120%
 const MIN_INIT_PRICE_0 = convert("5000", 18); // 5000 DONUT
-const STRATEGY_0 = "0xFA995AD01489BD8CBDeeF7DCcB5f6Da7E7Feb297";
-const BRIBE_0 = "0xCeb774dCa56964547b98C88C39a5189d1f449cD0";
-const BRIBE_ROUTER_0 = "0x3E4de31F1ff82230AB22Bd0331f17216D66415aD";
+const STRATEGY_0 = "";
+const BRIBE_0 = "";
+const BRIBE_ROUTER_0 = "";
 
 // STRATEGY 1
 // Buy DONUT-ETH LP and send to DAO
@@ -50,9 +51,9 @@ const INIT_PRICE_1 = convert("2", 18); // 2 DONUT-ETH LP
 const EPOCH_PERIOD_1 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_1 = convert("1.2", 18); // 120%
 const MIN_INIT_PRICE_1 = convert("2", 18); // 2 DONUT-ETH LP
-const STRATEGY_1 = "0x361266B1aacCa78C6ea5DF92313c39186A0fC7f6";
-const BRIBE_1 = "0x39634926f255abB4cC6d2E5fa00c6a1e3a454313";
-const BRIBE_ROUTER_1 = "0x356d05cEBe677F415b1c830404a0005373D5832F";
+const STRATEGY_1 = "";
+const BRIBE_1 = "";
+const BRIBE_ROUTER_1 = "";
 
 // STRATEGY 2
 // Buy USDC and send to DAO
@@ -63,9 +64,22 @@ const INIT_PRICE_2 = convert("100", 6); // 2 USDC
 const EPOCH_PERIOD_2 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_2 = convert("1.2", 18); // 120%
 const MIN_INIT_PRICE_2 = convert("100", 6); // 2 USDC
-const STRATEGY_2 = "0xBBbd28D116A4DdCb42336569F0D0a43C423BBC69";
-const BRIBE_2 = "0xCdc9F01Fe25F837228D6Be8d4B823cC9096573aA";
-const BRIBE_ROUTER_2 = "0x927C923385dF96E06B018D02151f006B7179bAF3";
+const STRATEGY_2 = "";
+const BRIBE_2 = "";
+const BRIBE_ROUTER_2 = "";
+
+// STRATEGY 3
+// Buy USDC and send to DAO
+const STRATEGY_DESCRIPTION_3 = "Buy cbBTC and send to DAO";
+const PAYMENT_TOKEN_3 = CBBTC;
+const PAYMENT_RECEIVER_3 = DAO_ADDRESS;
+const INIT_PRICE_3 = convert("100", 18); // 100 CBBTC
+const EPOCH_PERIOD_3 = 24 * 60 * 60; // 1 Day
+const PRICE_MULTIPLIER_3 = convert("1.2", 18); // 120%
+const MIN_INIT_PRICE_3 = convert("100", 18); // 100 CBBTC
+const STRATEGY_3 = "";
+const BRIBE_3 = "";
+const BRIBE_ROUTER_3 = "";
 
 // Default Strategy and Bribe
 const PAYMENT_TOKEN = PAYMENT_TOKEN_2;

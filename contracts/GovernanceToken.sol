@@ -68,10 +68,14 @@ contract GovernanceToken is ERC20, ERC20Permit, ERC20Votes, ReentrancyGuard, Own
 
     /// @notice Stakes underlying tokens 1:1 for governance tokens
     /// @param amount Amount of underlying tokens to stake
+    /// @dev Auto-delegates to self on first stake for ERC20Votes compatibility
     function stake(uint256 amount) external nonReentrant {
         if (amount == 0) revert GovernanceToken__InvalidZeroAmount();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         _mint(msg.sender, amount);
+        if (delegates(msg.sender) == address(0)) {
+            _delegate(msg.sender, msg.sender);
+        }
         emit GovernanceToken__Staked(msg.sender, amount);
     }
 

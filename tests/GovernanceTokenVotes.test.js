@@ -57,12 +57,12 @@ describe("GovernanceToken - ERC20Votes Compatibility", function () {
         it("should have delegates function", async function () {
             expect(governanceToken.delegates).to.not.be.undefined;
 
-            await stakeTokens(user1, parseEther("100"));
-
-            // Before delegation, delegates returns zero address
+            // Before staking, delegates returns zero address
             expect(await governanceToken.delegates(user1.address)).to.equal(ethers.constants.AddressZero);
 
-            await governanceToken.connect(user1).delegate(user1.address);
+            await stakeTokens(user1, parseEther("100"));
+
+            // After staking, auto-delegated to self
             expect(await governanceToken.delegates(user1.address)).to.equal(user1.address);
         });
 
@@ -231,9 +231,8 @@ describe("GovernanceToken - ERC20Votes Compatibility", function () {
             // 5. delegate(address) ✓
 
             await stakeTokens(user1, parseEther("100"));
-            await governanceToken.connect(user1).delegate(user1.address);
 
-            // All required functions exist and work
+            // All required functions exist and work (auto-delegation means no manual delegate call needed)
             expect(await governanceToken.name()).to.equal("Staked Token");
             expect(await governanceToken.symbol()).to.equal("sTOKEN");
             expect(await governanceToken.decimals()).to.equal(18);
@@ -249,6 +248,79 @@ describe("GovernanceToken - ERC20Votes Compatibility", function () {
 
         it("should support delegateBySig for gasless delegation", async function () {
             expect(governanceToken.delegateBySig).to.not.be.undefined;
+        });
+    });
+
+    describe("Auto-delegation on Stake", function () {
+        it("should auto-delegate to self on first stake", async function () {
+            // Before staking, delegates should be zero address
+            expect(await governanceToken.delegates(user1.address)).to.equal(ethers.constants.AddressZero);
+
+            await stakeTokens(user1, parseEther("100"));
+
+            // After staking, should be self-delegated
+            expect(await governanceToken.delegates(user1.address)).to.equal(user1.address);
+        });
+
+        it("should have voting power immediately after staking without manual delegation", async function () {
+            await stakeTokens(user1, parseEther("100"));
+
+            // getVotes should return balance without needing to call delegate()
+            expect(await governanceToken.getVotes(user1.address)).to.equal(parseEther("100"));
+        });
+
+        it("should not re-delegate on subsequent stakes", async function () {
+            await stakeTokens(user1, parseEther("100"));
+
+            // User delegates to user2
+            await governanceToken.connect(user1).delegate(user2.address);
+            expect(await governanceToken.delegates(user1.address)).to.equal(user2.address);
+            expect(await governanceToken.getVotes(user2.address)).to.equal(parseEther("100"));
+
+            // User stakes more - should NOT override their delegation choice
+            await stakeTokens(user1, parseEther("50"));
+
+            // Delegation should still be to user2
+            expect(await governanceToken.delegates(user1.address)).to.equal(user2.address);
+            expect(await governanceToken.getVotes(user2.address)).to.equal(parseEther("150"));
+            expect(await governanceToken.getVotes(user1.address)).to.equal(0);
+        });
+
+        it("should allow user to delegate to someone else after auto-delegation", async function () {
+            await stakeTokens(user1, parseEther("100"));
+
+            // Auto-delegated to self
+            expect(await governanceToken.getVotes(user1.address)).to.equal(parseEther("100"));
+
+            // User can still delegate to someone else
+            await governanceToken.connect(user1).delegate(user2.address);
+
+            expect(await governanceToken.delegates(user1.address)).to.equal(user2.address);
+            expect(await governanceToken.getVotes(user1.address)).to.equal(0);
+            expect(await governanceToken.getVotes(user2.address)).to.equal(parseEther("100"));
+        });
+
+        it("should auto-delegate each user independently", async function () {
+            await stakeTokens(user1, parseEther("100"));
+            await stakeTokens(user2, parseEther("200"));
+
+            // Both should be self-delegated
+            expect(await governanceToken.delegates(user1.address)).to.equal(user1.address);
+            expect(await governanceToken.delegates(user2.address)).to.equal(user2.address);
+
+            expect(await governanceToken.getVotes(user1.address)).to.equal(parseEther("100"));
+            expect(await governanceToken.getVotes(user2.address)).to.equal(parseEther("200"));
+        });
+
+        it("should work correctly with Governor-style voting after auto-delegation", async function () {
+            await stakeTokens(user1, parseEther("100"));
+
+            // Simulate what a Governor contract would do: check votes at a past block
+            const stakeBlock = await ethers.provider.getBlockNumber();
+            await ethers.provider.send("evm_mine");
+
+            const pastVotes = await governanceToken.getPastVotes(user1.address, stakeBlock);
+            expect(pastVotes).to.equal(parseEther("100"));
         });
     });
 });
