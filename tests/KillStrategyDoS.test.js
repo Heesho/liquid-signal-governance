@@ -144,9 +144,8 @@ describe("Kill Strategy - User Vote Handling", function () {
         expect(await voter.strategy_Claimable(strategy2)).to.equal(ethers.utils.parseEther("500"));
     });
 
-    it("revenue sent after kill but before user reset: dead strategy share goes to... nowhere (stuck)", async function () {
-        // This test documents the current behavior: revenue based on dead strategy weight
-        // gets calculated but discarded (not added to claimable because !isAlive)
+    it("revenue sent after kill but before user reset: dead strategy share goes to treasury", async function () {
+        // After fix: revenue for dead strategy is redirected to treasury instead of being stuck
         const strategy1 = await createStrategy();
         const strategy2 = await createStrategy();
 
@@ -157,6 +156,8 @@ describe("Kill Strategy - User Vote Handling", function () {
         const revenueRouter = await RevenueRouter.deploy(revenueToken.address, voter.address);
         await voter.setRevenueSource(revenueRouter.address);
         await revenueToken.mint(owner.address, ethers.utils.parseEther("1000"));
+
+        const treasuryBefore = await revenueToken.balanceOf(treasury.address);
 
         // Kill strategy1 (weight remains for user to withdraw)
         await voter.killStrategy(strategy1);
@@ -171,14 +172,12 @@ describe("Kill Strategy - User Vote Handling", function () {
         // Strategy2 gets 500 (its 50% share)
         expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("500"));
 
-        // Strategy1's 500 share is stuck in voter (calculated based on weight but discarded)
-        expect(await revenueToken.balanceOf(voter.address)).to.equal(ethers.utils.parseEther("500"));
+        // Strategy1's 500 share goes to treasury (not stuck)
+        const treasuryAfter = await revenueToken.balanceOf(treasury.address);
+        expect(treasuryAfter.sub(treasuryBefore)).to.equal(ethers.utils.parseEther("500"));
 
-        console.log("\n=== STUCK FUNDS ISSUE (different from DoS) ===");
-        console.log("This is a known tradeoff: dead strategy weight remains until users reset");
-        console.log("Revenue calculated for dead strategy is discarded, not redistributed");
-        console.log("Stuck in Voter:", ethers.utils.formatEther(await revenueToken.balanceOf(voter.address)), "WETH");
-        console.log("================================================\n");
+        // No funds stuck in voter
+        expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
     });
 
     it("after all users reset from dead strategy, no more stuck funds", async function () {

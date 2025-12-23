@@ -84,12 +84,12 @@ contract Voter is ReentrancyGuard, Ownable {
     error Voter__StrategyLengthNotEqualToWeightLength();
     error Voter__NotAuthorizedRevenueSource();
     error Voter__InvalidZeroAddress();
-    error Voter__StrategyExists();
     error Voter__StrategyIsDead();
     error Voter__NotStrategy();
     error Voter__BribeSplitExceedsMax();
     error Voter__AlreadyVotedForStrategy();
     error Voter__ZeroWeight();
+    error Voter__ZeroTotalWeight();
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -284,8 +284,6 @@ contract Voter is ReentrancyGuard, Ownable {
             _minInitPrice
         );
 
-        if (strategy_IsValid[strategy]) revert Voter__StrategyExists();
-
         strategies.push(strategy);
         strategy_IsValid[strategy] = true;
         strategy_IsAlive[strategy] = true;
@@ -366,6 +364,8 @@ contract Voter is ReentrancyGuard, Ownable {
             if (strategy_IsValid[_strategy] && strategy_IsAlive[_strategy]) _totalVoteWeight += _weights[i];
         }
 
+        if (_totalVoteWeight == 0) revert Voter__ZeroTotalWeight();
+
         // allocate votes proportionally
         for (uint256 i = 0; i < _strategyCnt; i++) {
             address _strategy = _strategyVote[i];
@@ -402,7 +402,11 @@ contract Voter is ReentrancyGuard, Ownable {
             uint256 _delta = _index - _supplyIndex;
             if (_delta > 0) {
                 uint256 _share = _supplied * _delta / 1e18;
-                if (strategy_IsAlive[_strategy]) strategy_Claimable[_strategy] += _share;
+                if (strategy_IsAlive[_strategy]) {
+                    strategy_Claimable[_strategy] += _share;
+                } else {
+                    IERC20(revenueToken).safeTransfer(treasury, _share);
+                }
             }
         } else {
             strategy_SupplyIndex[_strategy] = index;
@@ -430,7 +434,7 @@ contract Voter is ReentrancyGuard, Ownable {
 
     /// @notice Returns pending revenue from index delta (not yet added to claimable)
     /// @dev This is revenue that has been notified but not yet updated for this strategy
-    function strategy_PendingRevenue(address strategy) external view returns (uint256) {
+    function getStrategyPendingRevenue(address strategy) external view returns (uint256) {
         uint256 _supplied = strategy_Weight[strategy];
         if (_supplied == 0) return 0;
 

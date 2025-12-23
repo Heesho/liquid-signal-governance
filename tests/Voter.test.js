@@ -939,13 +939,11 @@ describe("Voter Contract - Comprehensive Tests", function () {
             strategy1 = s1.strategy;
         });
 
-        it("should handle voting with zero strategies array", async function () {
+        it("should revert when voting with zero strategies array", async function () {
             await stakeTokens(user1, ethers.utils.parseEther("100"));
-            // Empty vote should work but result in no weight
-            await voter.connect(user1).vote([], []);
 
-            expect(await voter.account_UsedWeights(user1.address)).to.equal(0);
-            expect(await voter.totalWeight()).to.equal(0);
+            // Should revert with ZeroTotalWeight since no strategies provided
+            await expect(voter.connect(user1).vote([], [])).to.be.reverted;
         });
 
         it("should handle very large revenue amounts", async function () {

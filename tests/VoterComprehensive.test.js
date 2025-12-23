@@ -1122,25 +1122,29 @@ describe("Voter Contract - Comprehensive Tests", function () {
             // Kill s1 (sends its claimable to treasury)
             const treasuryBefore = await revenueToken.balanceOf(treasury.address);
             await voter.killStrategy(s1);
-            const treasuryAfter = await revenueToken.balanceOf(treasury.address);
-            expect(treasuryAfter.sub(treasuryBefore)).to.equal(ethers.utils.parseEther("100"));
+            const treasuryAfterKill = await revenueToken.balanceOf(treasury.address);
+            expect(treasuryAfterKill.sub(treasuryBefore)).to.equal(ethers.utils.parseEther("100"));
 
-            // Second revenue - s1 dead but weight still counts
+            // Second revenue - s1 dead but weight still counts, its share goes to treasury
             await sendRevenue(ethers.utils.parseEther("200"));
             await voter.updateStrategy(s1);
             await voter.updateStrategy(s2);
 
-            // s1 doesn't accumulate (dead)
+            // s1 doesn't accumulate (dead) - its share went to treasury
             expect(await voter.strategy_Claimable(s1)).to.equal(0);
             // s2 gets its 50% share
             expect(await voter.strategy_Claimable(s2)).to.equal(ethers.utils.parseEther("200"));
+
+            // s1's 100 from second round went to treasury (not stuck)
+            const treasuryAfterSecond = await revenueToken.balanceOf(treasury.address);
+            expect(treasuryAfterSecond.sub(treasuryAfterKill)).to.equal(ethers.utils.parseEther("100"));
 
             // Distribute s2
             await voter["distribute(address)"](s2);
             expect(await revenueToken.balanceOf(s2)).to.equal(ethers.utils.parseEther("200"));
 
-            // s1's 100 from second round is stuck in voter
-            expect(await revenueToken.balanceOf(voter.address)).to.equal(ethers.utils.parseEther("100"));
+            // No funds stuck in voter
+            expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
         });
 
         it("should handle user voting for mix of alive and dead strategies", async function () {

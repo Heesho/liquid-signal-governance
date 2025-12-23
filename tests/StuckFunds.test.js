@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 /**
- * Tests for killStrategy behavior and stuck funds handling.
+ * Tests for killStrategy behavior and revenue handling for dead strategies.
  *
  * Key Design Decision:
  * killStrategy does NOT remove weight from totalWeight/strategy_Weight because:
@@ -10,12 +10,12 @@ const { ethers } = require("hardhat");
  * - _reset() needs to subtract those votes from strategy_Weight
  * - If killStrategy zeroed weights, _reset() would underflow and users would be stuck forever
  *
- * Instead:
+ * Revenue handling for dead strategies:
  * - killStrategy sends pending claimable to treasury
  * - Dead strategies don't accumulate new claimable (_updateFor checks isAlive)
+ * - Revenue for dead strategy's weight proportion is redirected to treasury (not stuck)
  * - Weights are removed when users call reset() in the next epoch
- * - Until users reset, revenue for dead strategy's weight proportion is discarded (stuck)
- * - Once all users reset from dead strategy, weights are properly removed and no more stuck funds
+ * - Once all users reset from dead strategy, weights are properly removed
  */
 describe("Stuck Funds Analysis", function () {
     let owner, user1, user2, treasury;
@@ -221,12 +221,10 @@ describe("Stuck Funds Analysis", function () {
         });
     });
 
-    describe("Temporary Stuck Funds (Expected Tradeoff)", function () {
+    describe("Dead Strategy Revenue Goes to Treasury", function () {
 
-        it("revenue after kill but before user reset: dead strategy share is stuck temporarily", async function () {
-            // This is the expected tradeoff: dead strategy weight remains until users reset
-            // Revenue calculated for dead strategy is discarded (not added to claimable)
-            // so it stays stuck in voter until users reset and remove the weight
+        it("revenue after kill but before user reset: dead strategy share goes to treasury", async function () {
+            // Revenue for dead strategy is redirected to treasury instead of being stuck
             const strategy1 = await createStrategy();
             const strategy2 = await createStrategy();
 
@@ -234,6 +232,8 @@ describe("Stuck Funds Analysis", function () {
             await stakeTokens(user2, ethers.utils.parseEther("100"));
             await voter.connect(user1).vote([strategy1], [100]);
             await voter.connect(user2).vote([strategy2], [100]);
+
+            const treasuryBefore = await revenueToken.balanceOf(treasury.address);
 
             // Kill strategy1 (weight remains for user to withdraw)
             await voter.killStrategy(strategy1);
@@ -247,8 +247,12 @@ describe("Stuck Funds Analysis", function () {
             // Strategy2 gets 500 (its 50% share based on weight)
             expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("500"));
 
-            // Strategy1's 500 share is stuck in voter (calculated based on weight but discarded)
-            expect(await revenueToken.balanceOf(voter.address)).to.equal(ethers.utils.parseEther("500"));
+            // Strategy1's 500 share goes to treasury (not stuck)
+            const treasuryAfter = await revenueToken.balanceOf(treasury.address);
+            expect(treasuryAfter.sub(treasuryBefore)).to.equal(ethers.utils.parseEther("500"));
+
+            // No funds stuck in voter
+            expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
         });
 
         it("after all users reset from dead strategy, no more stuck funds", async function () {
@@ -283,7 +287,7 @@ describe("Stuck Funds Analysis", function () {
             expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
         });
 
-        it("multiple epochs of stuck funds accumulate until users reset", async function () {
+        it("multiple epochs: dead strategy revenue goes to treasury each time", async function () {
             const strategy1 = await createStrategy();
             const strategy2 = await createStrategy();
 
@@ -292,10 +296,12 @@ describe("Stuck Funds Analysis", function () {
             await voter.connect(user1).vote([strategy1], [100]);
             await voter.connect(user2).vote([strategy2], [100]);
 
+            const treasuryBefore = await revenueToken.balanceOf(treasury.address);
+
             // Kill strategy1
             await voter.killStrategy(strategy1);
 
-            // Multiple revenue distributions - 50% gets stuck each time
+            // Multiple revenue distributions - 50% goes to treasury each time
             for (let i = 0; i < 5; i++) {
                 await sendRevenue(ethers.utils.parseEther("100"));
                 await voter.distributeAll();
@@ -304,8 +310,12 @@ describe("Stuck Funds Analysis", function () {
             // Strategy2 gets 250 WETH (50% of 500 total)
             expect(await revenueToken.balanceOf(strategy2)).to.equal(ethers.utils.parseEther("250"));
 
-            // 250 WETH stuck in Voter (strategy1's share discarded)
-            expect(await revenueToken.balanceOf(voter.address)).to.equal(ethers.utils.parseEther("250"));
+            // 250 WETH goes to treasury (strategy1's share redirected)
+            const treasuryAfter = await revenueToken.balanceOf(treasury.address);
+            expect(treasuryAfter.sub(treasuryBefore)).to.equal(ethers.utils.parseEther("250"));
+
+            // No funds stuck in voter
+            expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
         });
     });
 
@@ -341,7 +351,7 @@ describe("Stuck Funds Analysis", function () {
             expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
         });
 
-        it("partial reset: some users reset, others don't", async function () {
+        it("partial reset: some users reset, others don't - revenue goes to treasury", async function () {
             const strategy1 = await createStrategy();
             const strategy2 = await createStrategy();
 
@@ -364,12 +374,18 @@ describe("Stuck Funds Analysis", function () {
             expect(await voter.strategy_Weight(strategy1)).to.equal(ethers.utils.parseEther("100"));
             expect(await voter.totalWeight()).to.equal(ethers.utils.parseEther("100"));
 
-            // Send revenue - 100% goes to dead strategy (stuck)
+            const treasuryBefore = await revenueToken.balanceOf(treasury.address);
+
+            // Send revenue - 100% goes to dead strategy -> treasury
             await sendRevenue(ethers.utils.parseEther("1000"));
             await voter.distributeAll();
 
-            // All stuck because only dead strategy has weight
-            expect(await revenueToken.balanceOf(voter.address)).to.equal(ethers.utils.parseEther("1000"));
+            // All goes to treasury because only dead strategy has weight
+            const treasuryAfter = await revenueToken.balanceOf(treasury.address);
+            expect(treasuryAfter.sub(treasuryBefore)).to.equal(ethers.utils.parseEther("1000"));
+
+            // No funds stuck in voter
+            expect(await revenueToken.balanceOf(voter.address)).to.equal(0);
 
             // Advance another epoch, user2 resets
             await ethers.provider.send("evm_increaseTime", [WEEK]);

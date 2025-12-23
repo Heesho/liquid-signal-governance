@@ -190,7 +190,7 @@ function addBribeReward(address _bribe, address _rewardToken) external;
 function getStrategies() external view returns (address[] memory);
 function length() external view returns (uint256);
 function getStrategyVote(address account) external view returns (address[] memory);
-function strategy_PendingRevenue(address strategy) external view returns (uint256);
+function getStrategyPendingRevenue(address strategy) external view returns (uint256);
 ```
 
 ---

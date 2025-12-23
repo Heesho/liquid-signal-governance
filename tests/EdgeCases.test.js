@@ -214,21 +214,21 @@ describe("Edge Cases and Security Tests", function () {
     // ==================== EMPTY/ZERO VALUE HANDLING ====================
 
     describe("Empty and Zero Value Handling", function () {
-        it("should handle empty vote arrays", async function () {
+        it("should revert on empty vote arrays", async function () {
             await stakeTokens(user1, ethers.utils.parseEther("100"));
-            await voter.connect(user1).vote([], []);
-            expect(await voter.account_UsedWeights(user1.address)).to.equal(0);
+
+            // Should revert with ZeroTotalWeight since no strategies provided
+            await expect(voter.connect(user1).vote([], [])).to.be.reverted;
         });
 
-        it("should handle voting when all strategies are dead", async function () {
+        it("should revert when voting for only dead strategies", async function () {
             const { strategy } = await createStrategy();
             await voter.killStrategy(strategy);
 
             await stakeTokens(user1, ethers.utils.parseEther("100"));
-            await voter.connect(user1).vote([strategy], [100]);
 
-            // No weight added since strategy is dead
-            expect(await voter.account_UsedWeights(user1.address)).to.equal(0);
+            // Should revert with ZeroTotalWeight since no valid strategies
+            await expect(voter.connect(user1).vote([strategy], [100])).to.be.reverted;
         });
 
         it("should handle distribute when no claimable", async function () {

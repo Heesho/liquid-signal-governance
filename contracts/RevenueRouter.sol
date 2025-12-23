@@ -56,6 +56,7 @@ contract RevenueRouter is ReentrancyGuard {
     function flush() external nonReentrant returns (uint256 amount) {
         amount = IERC20(revenueToken).balanceOf(address(this));
         if (amount == 0) revert RevenueRouter__NoRevenueToFlush();
+        IERC20(revenueToken).safeApprove(voter, 0);
         IERC20(revenueToken).safeApprove(voter, amount);
         IVoter(voter).notifyRevenue(amount);
         emit RevenueRouter__Flushed(msg.sender, amount);
@@ -66,6 +67,7 @@ contract RevenueRouter is ReentrancyGuard {
     function flushIfAvailable() external nonReentrant returns (uint256 amount) {
         amount = IERC20(revenueToken).balanceOf(address(this));
         if (amount > 0) {
+            IERC20(revenueToken).safeApprove(voter, 0);
             IERC20(revenueToken).safeApprove(voter, amount);
             IVoter(voter).notifyRevenue(amount);
             emit RevenueRouter__Flushed(msg.sender, amount);

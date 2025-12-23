@@ -126,7 +126,7 @@ contract Multicall {
         data.claimable = IVoter(voter).strategy_Claimable(strategy);
 
         // Pending revenue calculations
-        data.pendingRevenue = IVoter(voter).strategy_PendingRevenue(strategy);
+        data.pendingRevenue = IVoter(voter).getStrategyPendingRevenue(strategy);
         address revenueSource = IVoter(voter).revenueSource();
         address revenueToken = IVoter(voter).revenueToken();
         uint256 routerBalance = IERC20(revenueToken).balanceOf(revenueSource);

@@ -50,8 +50,8 @@ contract BribeRouter {
         uint256 balance = IERC20(paymentToken).balanceOf(address(this));
 
         if (balance > 0 && balance > IBribe(bribe).left(paymentToken)) {
-            IERC20(paymentToken).approve(bribe, 0);
-            IERC20(paymentToken).approve(bribe, balance);
+            IERC20(paymentToken).safeApprove(bribe, 0);
+            IERC20(paymentToken).safeApprove(bribe, balance);
             IBribe(bribe).notifyRewardAmount(paymentToken, balance);
             emit BribeRouter__Distributed(bribe, paymentToken, balance);
         }

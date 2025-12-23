@@ -19,7 +19,7 @@ interface IVoter {
     function strategy_IsValid(address strategy) external view returns (bool);
     function strategy_IsAlive(address strategy) external view returns (bool);
     function strategy_Claimable(address strategy) external view returns (uint256);
-    function strategy_PendingRevenue(address strategy) external view returns (uint256);
+    function getStrategyPendingRevenue(address strategy) external view returns (uint256);
     function account_Strategy_Votes(address account, address strategy) external view returns (uint256);
     function account_UsedWeights(address account) external view returns (uint256);
     function account_LastVoted(address account) external view returns (uint256);

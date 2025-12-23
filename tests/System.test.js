@@ -642,12 +642,11 @@ describe("System-Wide Tests", function () {
             expect(bribeAmount).to.equal(price.mul(5000).div(10000));
         });
 
-        it("should handle empty strategies array in vote", async function () {
+        it("should revert on empty strategies array in vote", async function () {
             await stakeTokens(user1, ethers.utils.parseEther("100"));
-            await voter.connect(user1).vote([], []);
 
-            expect(await voter.account_UsedWeights(user1.address)).to.equal(0);
-            expect(await voter.totalWeight()).to.equal(0);
+            // Should revert with ZeroTotalWeight since no strategies provided
+            await expect(voter.connect(user1).vote([], [])).to.be.reverted;
         });
 
         it("should handle revenue when all voters reset", async function () {
