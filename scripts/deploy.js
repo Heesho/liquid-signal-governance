@@ -11,7 +11,7 @@ const oneThousand = convert("1000", 18);
 const ADDRESS_ZERO = "0x0000000000000000000000000000000000000000";
 
 // External Addresses (Base Mainnet)
-const DAO_ADDRESS = "0x7a8C895E7826F66e1094532cB435Da725dc3868f";
+const DAO_ADDRESS = "0x2236f324Bd357E8b06f3e43ffDE75A0b89E75A6e";
 const GLAZE_CORP_ADDRESS = "";
 
 // Token Addresses (Base Mainnet)
@@ -22,75 +22,75 @@ const CBBTC = "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf";
 const DONUT_ETH_LP = "0xD1DbB2E56533C55C3A637D13C53aeEf65c5D5703";
 
 // Deployed Contract Addresses (paste after deployment)
-const BRIBE_FACTORY = "";
-const STRATEGY_FACTORY = "";
-const GOVERNANCE_TOKEN = "";
-const VOTER = "";
-const REVENUE_ROUTER = "";
-const MULTICALL = "";
+const BRIBE_FACTORY = "0x3fB7A4310B5E04Bc9767708228A626e170EFEd24";
+const STRATEGY_FACTORY = "0xA1502538aD6Fa966f401be878dCa6c8c01CbA8c1";
+const GOVERNANCE_TOKEN = "0x2e5BaC759449b9673Ce2e2e7C87cFce8D8A0b2c3";
+const VOTER = "0x1fAfC7Ec84ee588F1836833a4217b8a3e6632522";
+const REVENUE_ROUTER = "0x4799CBe9782265C0633d24c7311dD029090dED33";
+const MULTICALL = "0x1a90e9A7f0ED2C0CB054F470e8F9c06a935B9789";
 
 // STRATEGY 0
 // Buy DONUT and send to DAO
 const STRATEGY_DESCRIPTION_0 = "Buy DONUT and send to DAO";
 const PAYMENT_TOKEN_0 = DONUT;
 const PAYMENT_RECEIVER_0 = DAO_ADDRESS;
-const INIT_PRICE_0 = convert("5000", 18); // 5000 DONUT
+const INIT_PRICE_0 = convert("40000", 18); // 40000 DONUT
 const EPOCH_PERIOD_0 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_0 = convert("1.2", 18); // 120%
-const MIN_INIT_PRICE_0 = convert("5000", 18); // 5000 DONUT
-const STRATEGY_0 = "";
-const BRIBE_0 = "";
-const BRIBE_ROUTER_0 = "";
+const MIN_INIT_PRICE_0 = convert("40000", 18); // 40000 DONUT
+const STRATEGY_0 = "0x7A3f1590fB39708cbba532DD2722323605585a5c";
+const BRIBE_0 = "0x7262682080Cb7258B9a7Def3a984794Ad6FF19EA";
+const BRIBE_ROUTER_0 = "0x1D28c3C90D6470770646Bc2504106998433B6814";
 
 // STRATEGY 1
 // Buy DONUT-ETH LP and send to DAO
 const STRATEGY_DESCRIPTION_1 = "Buy DONUT-ETH LP and send to DAO";
 const PAYMENT_TOKEN_1 = DONUT_ETH_LP;
 const PAYMENT_RECEIVER_1 = DAO_ADDRESS;
-const INIT_PRICE_1 = convert("2", 18); // 2 DONUT-ETH LP
+const INIT_PRICE_1 = convert("1000", 18); // 1000 DONUT-ETH LP
 const EPOCH_PERIOD_1 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_1 = convert("1.2", 18); // 120%
-const MIN_INIT_PRICE_1 = convert("2", 18); // 2 DONUT-ETH LP
-const STRATEGY_1 = "";
-const BRIBE_1 = "";
-const BRIBE_ROUTER_1 = "";
+const MIN_INIT_PRICE_1 = convert("1000", 18); // 1000 DONUT-ETH LP
+const STRATEGY_1 = "0xcD1Ba332830EF5336Fb0A061cC77e56A80d977d8";
+const BRIBE_1 = "0xdA81790d0D0B53cBd08C20b6c33FA3Ba4c7fa7cc";
+const BRIBE_ROUTER_1 = "0x898aaDf6C0B301c72F5C88620f2B448bc16e940C";
 
 // STRATEGY 2
 // Buy USDC and send to DAO
 const STRATEGY_DESCRIPTION_2 = "Buy USDC and send to DAO";
 const PAYMENT_TOKEN_2 = USDC;
 const PAYMENT_RECEIVER_2 = DAO_ADDRESS;
-const INIT_PRICE_2 = convert("100", 6); // 2 USDC
+const INIT_PRICE_2 = convert("4000", 6); // 4000 USDC
 const EPOCH_PERIOD_2 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_2 = convert("1.2", 18); // 120%
-const MIN_INIT_PRICE_2 = convert("100", 6); // 2 USDC
-const STRATEGY_2 = "";
-const BRIBE_2 = "";
-const BRIBE_ROUTER_2 = "";
+const MIN_INIT_PRICE_2 = convert("4000", 6); // 4000 USDC
+const STRATEGY_2 = "0x712705fEd5DDf9E5E069Cc79e66A91679b738323";
+const BRIBE_2 = "0xa4B6949A4aDb264789A4F6D50847190C00C73789";
+const BRIBE_ROUTER_2 = "0x92bb1cbbb8Dcb3B4dF62E2476FCC6FDa365B60b7";
 
 // STRATEGY 3
-// Buy USDC and send to DAO
+// Buy cbBTC and send to DAO
 const STRATEGY_DESCRIPTION_3 = "Buy cbBTC and send to DAO";
 const PAYMENT_TOKEN_3 = CBBTC;
 const PAYMENT_RECEIVER_3 = DAO_ADDRESS;
-const INIT_PRICE_3 = convert("100", 18); // 100 CBBTC
+const INIT_PRICE_3 = convert("0.04", 8); // 0.04 cbBTC
 const EPOCH_PERIOD_3 = 24 * 60 * 60; // 1 Day
 const PRICE_MULTIPLIER_3 = convert("1.2", 18); // 120%
-const MIN_INIT_PRICE_3 = convert("100", 18); // 100 CBBTC
-const STRATEGY_3 = "";
-const BRIBE_3 = "";
-const BRIBE_ROUTER_3 = "";
+const MIN_INIT_PRICE_3 = convert("0.04", 8); // 0.04 cbBTC
+const STRATEGY_3 = "0x0367399680190889DCa29f3c4B72f5F533CA7cea";
+const BRIBE_3 = "0xc89e849a69b2119c0552a3D3a9709297dbC436E2";
+const BRIBE_ROUTER_3 = "0xf5c423b7C0506Cb006AD9E0d1086CbB69DaDcB34";
 
 // Default Strategy and Bribe
-const PAYMENT_TOKEN = PAYMENT_TOKEN_2;
-const PAYMENT_RECEIVER = PAYMENT_RECEIVER_2;
-const INIT_PRICE = INIT_PRICE_2;
-const EPOCH_PERIOD = EPOCH_PERIOD_2;
-const PRICE_MULTIPLIER = PRICE_MULTIPLIER_2;
-const MIN_INIT_PRICE = MIN_INIT_PRICE_2;
-const STRATEGY = STRATEGY_2;
-const BRIBE = BRIBE_2;
-const BRIBE_ROUTER = BRIBE_ROUTER_2;
+const PAYMENT_TOKEN = PAYMENT_TOKEN_3;
+const PAYMENT_RECEIVER = PAYMENT_RECEIVER_3;
+const INIT_PRICE = INIT_PRICE_3;
+const EPOCH_PERIOD = EPOCH_PERIOD_3;
+const PRICE_MULTIPLIER = PRICE_MULTIPLIER_3;
+const MIN_INIT_PRICE = MIN_INIT_PRICE_3;
+const STRATEGY = STRATEGY_3;
+const BRIBE = BRIBE_3;
+const BRIBE_ROUTER = BRIBE_ROUTER_3;
 
 // Contract Variables
 let bribeFactory, strategyFactory;
@@ -427,6 +427,33 @@ async function printAllAddresses() {
   console.log("RevenueRouter:    ", REVENUE_ROUTER);
   console.log("Multicall:        ", MULTICALL);
 
+  // Print on-chain parameters if contracts are available
+  if (voter && governanceToken) {
+    console.log("\n--- On-Chain Parameters ---");
+    const voterOwner = await voter.owner();
+    const govTokenOwner = await governanceToken.owner();
+    const bribeSplit = await voter.bribeSplit();
+    const revenueSource = await voter.revenueSource();
+    const underlying = await governanceToken.underlying();
+    const totalWeight = await voter.totalWeight();
+    const strategies = await voter.getStrategies();
+    const strategyCount = strategies.length;
+    const govTokenName = await governanceToken.name();
+    const govTokenSymbol = await governanceToken.symbol();
+    const revenueToken = await voter.revenueToken();
+
+    console.log("Voter Owner:      ", voterOwner);
+    console.log("GovToken Owner:   ", govTokenOwner);
+    console.log("GovToken Name:    ", govTokenName);
+    console.log("GovToken Symbol:  ", govTokenSymbol);
+    console.log("Bribe Split:      ", bribeSplit.toString() / 100 + "%");
+    console.log("Revenue Source:   ", revenueSource);
+    console.log("Revenue Token:    ", revenueToken);
+    console.log("Underlying Token: ", underlying);
+    console.log("Total Weight:     ", divDec(totalWeight).toFixed(4));
+    console.log("Strategy Count:   ", strategyCount.toString());
+  }
+
   console.log("\n--- Strategy 0: " + STRATEGY_DESCRIPTION_0 + " ---");
   console.log("Strategy:         ", STRATEGY_0);
   console.log("Bribe:            ", BRIBE_0);
@@ -441,6 +468,11 @@ async function printAllAddresses() {
   console.log("Strategy:         ", STRATEGY_2);
   console.log("Bribe:            ", BRIBE_2);
   console.log("BribeRouter:      ", BRIBE_ROUTER_2);
+
+  console.log("\n--- Strategy 3: " + STRATEGY_DESCRIPTION_3 + " ---");
+  console.log("Strategy:         ", STRATEGY_3);
+  console.log("Bribe:            ", BRIBE_3);
+  console.log("BribeRouter:      ", BRIBE_ROUTER_3);
 
   console.log(
     "\n===================================================================\n"
