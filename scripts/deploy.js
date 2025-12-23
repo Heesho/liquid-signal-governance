@@ -301,6 +301,45 @@ async function verifyMulticall() {
   console.log("Multicall Verified");
 }
 
+async function verifyStrategy() {
+  console.log("Starting Strategy Verification");
+  await hre.run("verify:verify", {
+    address: STRATEGY,
+    contract: "contracts/Strategy.sol:Strategy",
+    constructorArguments: [
+      VOTER,
+      WETH,
+      PAYMENT_TOKEN,
+      PAYMENT_RECEIVER,
+      INIT_PRICE,
+      EPOCH_PERIOD,
+      PRICE_MULTIPLIER,
+      MIN_INIT_PRICE,
+    ],
+  });
+  console.log("Strategy Verified");
+}
+
+async function verifyBribe() {
+  console.log("Starting Bribe Verification");
+  await hre.run("verify:verify", {
+    address: BRIBE,
+    contract: "contracts/Bribe.sol:Bribe",
+    constructorArguments: [VOTER],
+  });
+  console.log("Bribe Verified");
+}
+
+async function verifyBribeRouter() {
+  console.log("Starting BribeRouter Verification");
+  await hre.run("verify:verify", {
+    address: BRIBE_ROUTER,
+    contract: "contracts/BribeRouter.sol:BribeRouter",
+    constructorArguments: [VOTER, STRATEGY, PAYMENT_TOKEN],
+  });
+  console.log("BribeRouter Verified");
+}
+
 // =============================================================================
 // CONFIGURATION FUNCTIONS
 // =============================================================================
@@ -533,6 +572,16 @@ async function main() {
   // console.log("Starting Strategy Deployment");
   // await addStrategy();
   // await printStrategyAddresses();
+
+  //===================================================================
+  // Verify Strategy Contracts
+  //===================================================================
+
+  // console.log("Starting Strategy Verification");
+  // await verifyStrategy();
+  // await verifyBribe();
+  // await verifyBribeRouter();
+  // console.log("Strategy Contracts Verified");
 
   //===================================================================
   // Transfer Ownership
