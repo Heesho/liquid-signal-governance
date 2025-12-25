@@ -27,7 +27,7 @@ const STRATEGY_FACTORY = "0x6C561686394C5915b877b60aC442aD7aa81F5726";
 const GOVERNANCE_TOKEN = "0xC78B6e362cB0f48b59E573dfe7C99d92153a16d3";
 const VOTER = "0x9C5Cf3246d7142cdAeBBD5f653d95ACB73DdabA6";
 const REVENUE_ROUTER = "0x4cDF668bFa0563C9D0fc5D5bD33191f0a2aE2571";
-const MULTICALL = "0xB68F5446F7Cce3a83fa374D232022f21e4C58645";
+const MULTICALL = "0xf2aB9afFf845d7f3883AE81A1Ff52EF7B8C4a663";
 
 // STRATEGY 0
 // Buy DONUT and send to DAO
@@ -413,6 +413,67 @@ async function killStrategy(strategyAddress) {
   console.log("Strategy Killed:", strategyAddress);
 }
 
+async function distributeAndBuyDonut() {
+  console.log("Calling distributeAndBuy on Donut Strategy...");
+
+  // Get strategy data from Multicall
+  const [wallet] = await ethers.getSigners();
+  const strategyData = await multicall.getStrategyData(
+    STRATEGY_0,
+    wallet.address
+  );
+
+  const epochId = strategyData.epochId;
+  const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+  const maxPaymentAmount = strategyData.currentPrice;
+
+  // Print parameters
+  console.log("**************************************************************");
+  console.log("Strategy:          ", STRATEGY_0);
+  console.log("Epoch ID:          ", epochId.toString());
+  console.log("Deadline:          ", deadline);
+  console.log(
+    "Current Price:     ",
+    divDec(strategyData.currentPrice).toFixed(4),
+    "DONUT"
+  );
+  console.log(
+    "Init Price:        ",
+    divDec(strategyData.initPrice).toFixed(4),
+    "DONUT"
+  );
+  console.log(
+    "Revenue Balance:   ",
+    divDec(strategyData.revenueBalance).toFixed(4),
+    "WETH"
+  );
+  console.log(
+    "Max Payment:       ",
+    divDec(maxPaymentAmount).toFixed(4),
+    "DONUT"
+  );
+  console.log("**************************************************************");
+
+  // Approve Multicall to spend DONUT
+  // const donut = await ethers.getContractAt(
+  //   "@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20",
+  //   DONUT
+  // );
+  // console.log("Approving Multicall to spend DONUT...");
+  // const approveTx = await donut.approve(MULTICALL, maxPaymentAmount);
+  // await approveTx.wait();
+  // console.log("Approval complete");
+
+  const tx = await multicall.distributeAndBuy(
+    STRATEGY_0,
+    epochId,
+    deadline,
+    maxPaymentAmount
+  );
+  await tx.wait();
+  console.log("distributeAndBuy executed on Donut Strategy");
+}
+
 // =============================================================================
 // PRINT FUNCTIONS
 // =============================================================================
@@ -600,10 +661,16 @@ async function main() {
   // await killStrategy(STRATEGY_2); // Kill USDC strategy
 
   //===================================================================
+  // Distribute and Buy
+  //===================================================================
+
+  // await distributeAndBuyDonut();
+
+  //===================================================================
   // Print Deployment
   //===================================================================
 
-  await printAllAddresses();
+  // await printAllAddresses();
 }
 
 main()

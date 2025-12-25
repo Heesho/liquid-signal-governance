@@ -7,6 +7,8 @@ import "./interfaces/IVoter.sol";
 import "./interfaces/IStrategy.sol";
 import "./interfaces/IBribe.sol";
 import "./interfaces/IGovernanceToken.sol";
+import "./interfaces/IRevenueRouter.sol";
+import "./interfaces/IBribeRouter.sol";
 
 contract Multicall {
     using SafeERC20 for IERC20;
@@ -287,6 +289,10 @@ contract Multicall {
         uint256 deadline,
         uint256 maxPaymentAmount
     ) external returns (uint256 paymentAmount) {
+        // Flush revenue from router to voter if available
+        address revenueSource = IVoter(voter).revenueSource();
+        IRevenueRouter(revenueSource).flushIfAvailable();
+
         // Distribute pending revenue to this strategy to maximize revenue available
         IVoter(voter).distribute(strategy);
 
@@ -302,6 +308,10 @@ contract Multicall {
 
         // Execute buy - revenue tokens sent directly to caller
         paymentAmount = IStrategy(strategy).buy(msg.sender, epochId, deadline, maxPaymentAmount);
+
+        // Distribute bribe router rewards to bribe contract
+        address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
+        IBribeRouter(bribeRouter).distribute();
 
         // Refund any unused payment tokens to caller
         uint256 remaining = IERC20(paymentToken).balanceOf(address(this));
@@ -325,6 +335,10 @@ contract Multicall {
         uint256 deadline,
         uint256 maxPaymentAmount
     ) external returns (uint256 paymentAmount) {
+        // Flush revenue from router to voter if available
+        address revenueSource = IVoter(voter).revenueSource();
+        IRevenueRouter(revenueSource).flushIfAvailable();
+
         // Distribute all pending revenue to all strategies
         IVoter(voter).distributeAll();
 
@@ -340,6 +354,10 @@ contract Multicall {
 
         // Execute buy - revenue tokens sent directly to caller
         paymentAmount = IStrategy(strategy).buy(msg.sender, epochId, deadline, maxPaymentAmount);
+
+        // Distribute bribe router rewards to bribe contract
+        address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
+        IBribeRouter(bribeRouter).distribute();
 
         // Refund any unused payment tokens to caller
         uint256 remaining = IERC20(paymentToken).balanceOf(address(this));
