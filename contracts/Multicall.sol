@@ -309,9 +309,13 @@ contract Multicall {
         // Execute buy - revenue tokens sent directly to caller
         paymentAmount = IStrategy(strategy).buy(msg.sender, epochId, deadline, maxPaymentAmount);
 
-        // Distribute bribe router rewards to bribe contract
+        // Distribute bribe router rewards to bribe contract (only if above minimum)
+        // Bribe.notifyRewardAmount requires reward >= DURATION (604800)
         address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
-        IBribeRouter(bribeRouter).distribute();
+        uint256 bribeBalance = IERC20(paymentToken).balanceOf(bribeRouter);
+        if (bribeBalance >= 604800) {
+            IBribeRouter(bribeRouter).distribute();
+        }
 
         // Refund any unused payment tokens to caller
         uint256 remaining = IERC20(paymentToken).balanceOf(address(this));
@@ -355,9 +359,13 @@ contract Multicall {
         // Execute buy - revenue tokens sent directly to caller
         paymentAmount = IStrategy(strategy).buy(msg.sender, epochId, deadline, maxPaymentAmount);
 
-        // Distribute bribe router rewards to bribe contract
+        // Distribute bribe router rewards to bribe contract (only if above minimum)
+        // Bribe.notifyRewardAmount requires reward >= DURATION (604800)
         address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
-        IBribeRouter(bribeRouter).distribute();
+        uint256 bribeBalance = IERC20(paymentToken).balanceOf(bribeRouter);
+        if (bribeBalance >= 604800) {
+            IBribeRouter(bribeRouter).distribute();
+        }
 
         // Refund any unused payment tokens to caller
         uint256 remaining = IERC20(paymentToken).balanceOf(address(this));

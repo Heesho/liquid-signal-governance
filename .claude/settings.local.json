@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx hardhat test:*)"
+      "Bash(npx hardhat test:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)"
     ]
   }
 }
