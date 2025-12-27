@@ -678,6 +678,295 @@ describe("Multicall Contract", function () {
         });
     });
 
+    // ==================== FLUSH AND DISTRIBUTE ALL ====================
+
+    describe("flushAndDistributeAll", function () {
+        let strategy1, strategy2, strategy3;
+        let bribeRouter1, bribeRouter2, bribeRouter3;
+
+        beforeEach(async function () {
+            const s1 = await createStrategy(paymentToken);
+            const s2 = await createStrategy(paymentToken2);
+            const s3 = await createStrategy(paymentToken);
+            strategy1 = s1.strategy;
+            strategy2 = s2.strategy;
+            strategy3 = s3.strategy;
+            bribeRouter1 = s1.bribeRouter;
+            bribeRouter2 = s2.bribeRouter;
+            bribeRouter3 = s3.bribeRouter;
+
+            await stakeTokens(user1, ethers.utils.parseEther("100"));
+            await stakeTokens(user2, ethers.utils.parseEther("200"));
+
+            await voter.connect(user1).vote([strategy1, strategy2], [50, 50]);
+            await voter.connect(user2).vote([strategy2, strategy3], [50, 50]);
+            // Total: strategy1=50, strategy2=150, strategy3=100 (total=300)
+        });
+
+        it("should flush revenue router and distribute to all strategies", async function () {
+            // Send revenue to router (don't flush yet)
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("300"));
+
+            // Verify revenue is in router
+            expect(await revenueToken.balanceOf(revenueRouter.address)).to.equal(ethers.utils.parseEther("300"));
+
+            // Call flushAndDistributeAll
+            await multicall.flushAndDistributeAll();
+
+            // Check revenue distributed to all strategies
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const s2Contract = await ethers.getContractAt("Strategy", strategy2);
+            const s3Contract = await ethers.getContractAt("Strategy", strategy3);
+
+            // 50/300 * 300 = 50
+            expect(await s1Contract.getRevenueBalance()).to.equal(ethers.utils.parseEther("50"));
+            // 150/300 * 300 = 150
+            expect(await s2Contract.getRevenueBalance()).to.equal(ethers.utils.parseEther("150"));
+            // 100/300 * 300 = 100
+            expect(await s3Contract.getRevenueBalance()).to.equal(ethers.utils.parseEther("100"));
+        });
+
+        it("should allow anyone to call flushAndDistributeAll", async function () {
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("300"));
+
+            // Call from random user (user3)
+            await multicall.connect(user3).flushAndDistributeAll();
+
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            expect(await s1Contract.getRevenueBalance()).to.be.gt(0);
+        });
+
+        it("should distribute bribe rewards when balance >= 604800", async function () {
+            await voter.setBribeSplit(2000); // 20% to bribes
+
+            // Send revenue and distribute
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+            await revenueRouter.flush();
+            await voter.distributeAll();
+
+            // Execute buy to generate bribe rewards for strategy1
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const epochId = await s1Contract.epochId();
+            const price = await s1Contract.getPrice();
+
+            // Need enough payment to generate >= 604800 in bribe router
+            // Price is 100 USDC (6 decimals), 20% of that = 20 USDC = 20_000_000 (way above 604800)
+            const largePayment = ethers.utils.parseUnits("10000", 6); // 10k USDC
+            await paymentToken.mint(user3.address, largePayment);
+            await paymentToken.connect(user3).approve(s1Contract.address, largePayment);
+            const block = await ethers.provider.getBlock("latest");
+            await s1Contract.connect(user3).buy(user3.address, epochId, block.timestamp + 3600, largePayment);
+
+            // Check bribe router has balance
+            const bribeRouterBalance = await paymentToken.balanceOf(bribeRouter1);
+            expect(bribeRouterBalance).to.be.gte(604800);
+
+            // Get bribe contract
+            const bribeAddr = await voter.strategy_Bribe(strategy1);
+            const bribeContract = await ethers.getContractAt("Bribe", bribeAddr);
+
+            // Check rewards left before flushAndDistributeAll
+            const rewardsLeftBefore = await bribeContract.left(paymentToken.address);
+
+            // Call flushAndDistributeAll - should distribute bribe rewards
+            await multicall.flushAndDistributeAll();
+
+            // Check rewards left after - should have increased
+            const rewardsLeftAfter = await bribeContract.left(paymentToken.address);
+            expect(rewardsLeftAfter).to.be.gt(rewardsLeftBefore);
+        });
+
+        it("should NOT distribute bribe rewards when balance < 604800", async function () {
+            await voter.setBribeSplit(2000); // 20% to bribes
+
+            // Send revenue and distribute
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("10"));
+            await revenueRouter.flush();
+            await voter.distributeAll();
+
+            // Execute small buy to generate small bribe rewards
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const epochId = await s1Contract.epochId();
+
+            // Advance time to make price very low (near end of epoch)
+            await advanceTime(HOUR - 120);
+
+            // Get current price after decay
+            const currentPrice = await s1Contract.getPrice();
+
+            // Approve and buy at current price
+            await paymentToken.connect(user1).approve(s1Contract.address, currentPrice);
+            const block = await ethers.provider.getBlock("latest");
+            await s1Contract.connect(user1).buy(user1.address, epochId, block.timestamp + 300, currentPrice);
+
+            // Check bribe router balance (20% of current price should be < 604800 since price decayed)
+            const bribeRouterBalance = await paymentToken.balanceOf(bribeRouter1);
+
+            // If balance is below 604800, flushAndDistributeAll should NOT revert
+            // It should just skip the distribution
+            await expect(multicall.flushAndDistributeAll()).to.not.be.reverted;
+        });
+
+        it("should handle multiple strategies with different payment tokens", async function () {
+            await voter.setBribeSplit(2000);
+
+            // Generate revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("300"));
+            await revenueRouter.flush();
+            await voter.distributeAll();
+
+            // Buy from strategy1 (paymentToken - USDC) and strategy2 (paymentToken2 - DAI)
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const s2Contract = await ethers.getContractAt("Strategy", strategy2);
+
+            // Buy from strategy1
+            let epochId = await s1Contract.epochId();
+            let price = await s1Contract.getPrice();
+            await paymentToken.connect(user1).approve(s1Contract.address, price);
+            let block = await ethers.provider.getBlock("latest");
+            await s1Contract.connect(user1).buy(user1.address, epochId, block.timestamp + 3600, price);
+
+            // Buy from strategy2 (different payment token)
+            epochId = await s2Contract.epochId();
+            price = await s2Contract.getPrice();
+            await paymentToken2.connect(user1).approve(s2Contract.address, price);
+            block = await ethers.provider.getBlock("latest");
+            await s2Contract.connect(user1).buy(user1.address, epochId, block.timestamp + 3600, price);
+
+            // flushAndDistributeAll should handle both payment token types
+            await expect(multicall.flushAndDistributeAll()).to.not.be.reverted;
+        });
+
+        it("should work when there is no pending revenue in router", async function () {
+            // Don't send any revenue to router
+            // Just call flushAndDistributeAll - should not revert
+            await expect(multicall.flushAndDistributeAll()).to.not.be.reverted;
+        });
+
+        it("should work when revenue was already flushed", async function () {
+            // Send and flush revenue first
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+            await revenueRouter.flush();
+
+            // Now call flushAndDistributeAll - should still work (flushIfAvailable is safe)
+            await expect(multicall.flushAndDistributeAll()).to.not.be.reverted;
+
+            // Revenue should be distributed
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            expect(await s1Contract.getRevenueBalance()).to.be.gt(0);
+        });
+
+        it("should work with strategies that have no votes", async function () {
+            // Create a new strategy with no votes
+            const { strategy: emptyStrategy } = await createStrategy(paymentToken);
+
+            // Send revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+
+            // Should not revert
+            await expect(multicall.flushAndDistributeAll()).to.not.be.reverted;
+
+            // Empty strategy should have no revenue
+            const emptyStrategyContract = await ethers.getContractAt("Strategy", emptyStrategy);
+            expect(await emptyStrategyContract.getRevenueBalance()).to.equal(0);
+        });
+
+        it("should work with dead strategies", async function () {
+            // Kill strategy1
+            await voter.killStrategy(strategy1);
+
+            // Send revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("300"));
+
+            // Should not revert
+            await expect(multicall.flushAndDistributeAll()).to.not.be.reverted;
+
+            // Dead strategy should have no revenue
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            expect(await s1Contract.getRevenueBalance()).to.equal(0);
+
+            // Other strategies should have revenue
+            const s2Contract = await ethers.getContractAt("Strategy", strategy2);
+            expect(await s2Contract.getRevenueBalance()).to.be.gt(0);
+        });
+
+        it("should be idempotent - multiple calls should be safe", async function () {
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+
+            // First call
+            await multicall.flushAndDistributeAll();
+
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const balanceAfterFirst = await s1Contract.getRevenueBalance();
+
+            // Second call with no new revenue
+            await multicall.flushAndDistributeAll();
+
+            // Balance should remain the same
+            expect(await s1Contract.getRevenueBalance()).to.equal(balanceAfterFirst);
+
+            // Third call
+            await multicall.flushAndDistributeAll();
+            expect(await s1Contract.getRevenueBalance()).to.equal(balanceAfterFirst);
+        });
+
+        it("should distribute new revenue on subsequent calls", async function () {
+            // First batch of revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+            await multicall.flushAndDistributeAll();
+
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const balanceAfterFirst = await s1Contract.getRevenueBalance();
+
+            // Second batch of revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("50"));
+            await multicall.flushAndDistributeAll();
+
+            // Balance should have increased
+            expect(await s1Contract.getRevenueBalance()).to.be.gt(balanceAfterFirst);
+        });
+
+        it("should process all strategies in order", async function () {
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("300"));
+
+            // Call flushAndDistributeAll
+            await multicall.flushAndDistributeAll();
+
+            // Verify all strategies received their share
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const s2Contract = await ethers.getContractAt("Strategy", strategy2);
+            const s3Contract = await ethers.getContractAt("Strategy", strategy3);
+
+            const total = (await s1Contract.getRevenueBalance())
+                .add(await s2Contract.getRevenueBalance())
+                .add(await s3Contract.getRevenueBalance());
+
+            // Total distributed should equal total sent
+            expect(total).to.equal(ethers.utils.parseEther("300"));
+        });
+
+        it("should work correctly after epoch change", async function () {
+            // First epoch - distribute revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+            await multicall.flushAndDistributeAll();
+
+            // Advance to next epoch and change votes
+            await advanceToNextEpoch();
+            await voter.connect(user1).vote([strategy3], [100]); // Now strategy1 has 0, strategy3 has more
+
+            // New revenue
+            await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+            await multicall.flushAndDistributeAll();
+
+            // Strategy1 should have old revenue, no new revenue
+            const s1Contract = await ethers.getContractAt("Strategy", strategy1);
+            const s3Contract = await ethers.getContractAt("Strategy", strategy3);
+
+            // Strategy3 should have received more revenue in second distribution
+            expect(await s3Contract.getRevenueBalance()).to.be.gt(await s1Contract.getRevenueBalance());
+        });
+    });
+
     // ==================== BUY FUNCTIONS ====================
 
     describe("distributeAndBuy", function () {
@@ -1265,6 +1554,281 @@ describe("Multicall Contract", function () {
 
                 expect(card1.accountPaymentTokenBalance).to.equal(ethers.utils.parseUnits("100000", 6));
                 expect(card2.accountPaymentTokenBalance).to.equal(ethers.utils.parseEther("100000"));
+            });
+        });
+    });
+
+    // ==================== SYSTEM OVERVIEW ====================
+
+    describe("System Overview Functions", function () {
+        let strategy1, strategy2, bribeRouter1, bribeRouter2;
+
+        beforeEach(async function () {
+            const s1 = await createStrategy(paymentToken);
+            const s2 = await createStrategy(paymentToken2);
+            strategy1 = s1.strategy;
+            strategy2 = s2.strategy;
+            bribeRouter1 = s1.bribeRouter;
+            bribeRouter2 = s2.bribeRouter;
+
+            // Setup voting
+            await stakeTokens(user1, ethers.utils.parseEther("100"));
+            await stakeTokens(user2, ethers.utils.parseEther("200"));
+            await voter.connect(user1).vote([strategy1], [100]);
+            await voter.connect(user2).vote([strategy1, strategy2], [50, 50]);
+        });
+
+        describe("getSystemOverview", function () {
+            it("should return correct revenue router data", async function () {
+                // Send revenue to router
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+
+                const overview = await multicall.getSystemOverview();
+
+                expect(overview.revenueRouter).to.equal(revenueRouter.address);
+                expect(overview.revenueRouterWethBalance).to.equal(ethers.utils.parseEther("100"));
+            });
+
+            it("should return correct voter data", async function () {
+                const overview = await multicall.getSystemOverview();
+
+                expect(overview.voterAddress).to.equal(voter.address);
+                expect(overview.totalWeight).to.equal(ethers.utils.parseEther("300")); // 100 + 200
+                expect(overview.strategyCount).to.equal(2);
+            });
+
+            it("should return correct bribe split", async function () {
+                await voter.setBribeSplit(2500); // 25%
+
+                const overview = await multicall.getSystemOverview();
+                expect(overview.bribeSplit).to.equal(2500);
+            });
+
+            it("should return correct total claimable across all strategies", async function () {
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+                await revenueRouter.flush();
+                await voter.updateStrategy(strategy1);
+                await voter.updateStrategy(strategy2);
+
+                const overview = await multicall.getSystemOverview();
+
+                // Total claimable should be 100 WETH distributed across strategies (with small rounding tolerance)
+                expect(overview.voterTotalClaimable).to.be.closeTo(ethers.utils.parseEther("100"), 1e6);
+            });
+
+            it("should return correct governance token data", async function () {
+                const overview = await multicall.getSystemOverview();
+
+                expect(overview.governanceToken).to.equal(governanceToken.address);
+                expect(overview.governanceTokenTotalSupply).to.equal(ethers.utils.parseEther("300"));
+                expect(overview.underlyingToken).to.equal(underlying.address);
+                expect(overview.underlyingTokenDecimals).to.equal(18);
+                expect(overview.underlyingTokenSymbol).to.equal("UNDERLYING");
+            });
+
+            it("should return correct epoch timing", async function () {
+                const overview = await multicall.getSystemOverview();
+                const block = await ethers.provider.getBlock("latest");
+
+                expect(overview.epochDuration).to.equal(WEEK);
+                expect(overview.currentEpochStart).to.be.lte(block.timestamp);
+                expect(overview.nextEpochStart).to.equal(overview.currentEpochStart.add(WEEK));
+                expect(overview.timeUntilNextEpoch).to.be.gt(0);
+                expect(overview.timeUntilNextEpoch).to.be.lte(WEEK);
+            });
+        });
+
+        describe("getStrategyOverview", function () {
+            it("should return correct strategy info", async function () {
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                expect(overview.strategy).to.equal(strategy1);
+                expect(overview.bribe).to.not.equal(ethers.constants.AddressZero);
+                expect(overview.bribeRouter).to.equal(bribeRouter1);
+                expect(overview.paymentToken).to.equal(paymentToken.address);
+                expect(overview.paymentTokenSymbol).to.equal("USDC");
+                expect(overview.paymentTokenDecimals).to.equal(6);
+                expect(overview.isAlive).to.be.true;
+            });
+
+            it("should return correct WETH balances", async function () {
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+                await revenueRouter.flush();
+                await voter.updateStrategy(strategy1);
+
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                // strategy1 has 200/300 = 2/3 of votes
+                const expectedClaimable = ethers.utils.parseEther("100").mul(200).div(300);
+                expect(overview.strategyClaimable).to.be.closeTo(expectedClaimable, 1e6);
+                expect(overview.strategyWethBalance).to.equal(0);
+            });
+
+            it("should return correct strategy WETH balance after distribution", async function () {
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+                await revenueRouter.flush();
+                await voter.distribute(strategy1);
+
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                // strategy1 should have received 2/3 of 100 WETH
+                const expectedBalance = ethers.utils.parseEther("100").mul(200).div(300);
+                expect(overview.strategyWethBalance).to.be.closeTo(expectedBalance, 1e6);
+                expect(overview.strategyClaimable).to.equal(0);
+            });
+
+            it("should return correct total potential WETH", async function () {
+                // Send revenue to multiple places
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("50")); // in router
+                await revenueRouter.flush(); // now in voter index
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("30")); // new in router
+                await voter.updateStrategy(strategy1);
+
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                // Total potential = claimable + pending + router portion
+                expect(overview.strategyTotalPotentialWeth).to.be.gt(0);
+            });
+
+            it("should return correct bribe router token balance", async function () {
+                // Setup bribe split and buy to generate bribe tokens
+                await voter.setBribeSplit(2000);
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+                await revenueRouter.flush();
+                await voter.distribute(strategy1);
+
+                const strategyContract = await ethers.getContractAt("Strategy", strategy1);
+                const epochId = await strategyContract.epochId();
+                const price = await strategyContract.getPrice();
+
+                await paymentToken.connect(user1).approve(strategy1, price);
+                const block = await ethers.provider.getBlock("latest");
+                await strategyContract.connect(user1).buy(user1.address, epochId, block.timestamp + 3600, price);
+
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                // Bribe router should have 20% of price
+                expect(overview.bribeRouterTokenBalance).to.be.gt(0);
+            });
+
+            it("should return correct bribe tokens left", async function () {
+                // Setup bribe rewards
+                await voter.setBribeSplit(2000);
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+                await revenueRouter.flush();
+                await voter.distribute(strategy1);
+
+                const strategyContract = await ethers.getContractAt("Strategy", strategy1);
+                const epochId = await strategyContract.epochId();
+                const largePayment = ethers.utils.parseUnits("10000", 6);
+
+                await paymentToken.mint(user3.address, largePayment);
+                await paymentToken.connect(user3).approve(strategy1, largePayment);
+                const block = await ethers.provider.getBlock("latest");
+                await strategyContract.connect(user3).buy(user3.address, epochId, block.timestamp + 3600, largePayment);
+
+                // Distribute bribe router
+                const bribeRouterContract = await ethers.getContractAt("BribeRouter", bribeRouter1);
+                await bribeRouterContract.distribute();
+
+                const overview = await multicall.getStrategyOverview(strategy1);
+                expect(overview.bribeTokensLeft).to.be.gt(0);
+            });
+
+            it("should return correct voting info", async function () {
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                // strategy1 has 200 out of 300 total weight
+                expect(overview.strategyWeight).to.equal(ethers.utils.parseEther("200"));
+                // Vote percent is 200/300 * 100 = 66.67% (scaled by 1e18)
+                const expectedPercent = ethers.utils.parseEther("66.666666666666666666");
+                expect(overview.votePercent).to.be.closeTo(expectedPercent, ethers.utils.parseEther("0.1"));
+            });
+
+            it("should return correct auction info", async function () {
+                const overview = await multicall.getStrategyOverview(strategy1);
+
+                expect(overview.epochId).to.equal(0);
+                expect(overview.epochPeriod).to.equal(HOUR);
+                expect(overview.initPrice).to.equal(ethers.utils.parseUnits("100", 6));
+                expect(overview.currentPrice).to.be.gt(0);
+            });
+
+            it("should return correct time until auction end", async function () {
+                const overview1 = await multicall.getStrategyOverview(strategy1);
+                expect(overview1.timeUntilAuctionEnd).to.be.gt(0);
+                expect(overview1.timeUntilAuctionEnd).to.be.lte(HOUR);
+
+                // Advance past epoch
+                await advanceTime(HOUR + 60);
+
+                const overview2 = await multicall.getStrategyOverview(strategy1);
+                expect(overview2.timeUntilAuctionEnd).to.equal(0);
+            });
+
+            it("should handle dead strategy", async function () {
+                await voter.killStrategy(strategy1);
+
+                const overview = await multicall.getStrategyOverview(strategy1);
+                expect(overview.isAlive).to.be.false;
+            });
+        });
+
+        describe("getAllStrategyOverviews", function () {
+            it("should return all strategy overviews", async function () {
+                const overviews = await multicall.getAllStrategyOverviews();
+
+                expect(overviews.length).to.equal(2);
+                expect(overviews[0].strategy).to.equal(strategy1);
+                expect(overviews[1].strategy).to.equal(strategy2);
+            });
+
+            it("should return correct data for each strategy", async function () {
+                const overviews = await multicall.getAllStrategyOverviews();
+
+                expect(overviews[0].paymentTokenSymbol).to.equal("USDC");
+                expect(overviews[0].paymentTokenDecimals).to.equal(6);
+                expect(overviews[1].paymentTokenSymbol).to.equal("DAI");
+                expect(overviews[1].paymentTokenDecimals).to.equal(18);
+            });
+        });
+
+        describe("getFullSystemView", function () {
+            it("should return both system overview and all strategy overviews", async function () {
+                const [system, strategies] = await multicall.getFullSystemView();
+
+                // Check system data
+                expect(system.voterAddress).to.equal(voter.address);
+                expect(system.strategyCount).to.equal(2);
+
+                // Check strategies data
+                expect(strategies.length).to.equal(2);
+                expect(strategies[0].strategy).to.equal(strategy1);
+                expect(strategies[1].strategy).to.equal(strategy2);
+            });
+
+            it("should be efficient single call for full dashboard data", async function () {
+                // This test just confirms the call works and returns complete data
+                const [system, strategies] = await multicall.getFullSystemView();
+
+                // System overview
+                expect(system.revenueRouter).to.equal(revenueRouter.address);
+                expect(system.totalWeight).to.be.gt(0);
+                expect(system.epochDuration).to.equal(WEEK);
+
+                // All strategies
+                for (const s of strategies) {
+                    expect(s.strategy).to.not.equal(ethers.constants.AddressZero);
+                    expect(s.epochPeriod).to.equal(HOUR);
+                }
+            });
+
+            it("should include WETH distribution data", async function () {
+                await revenueToken.transfer(revenueRouter.address, ethers.utils.parseEther("100"));
+
+                const [system, strategies] = await multicall.getFullSystemView();
+
+                expect(system.revenueRouterWethBalance).to.equal(ethers.utils.parseEther("100"));
             });
         });
     });

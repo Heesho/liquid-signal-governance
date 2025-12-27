@@ -3,7 +3,13 @@
     "allow": [
       "Bash(npx hardhat test:*)",
       "Bash(cat:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(mkdir:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(npx hardhat:*)",
+      "Bash(ls:*)"
     ]
   }
 }

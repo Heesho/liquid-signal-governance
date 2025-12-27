@@ -84,6 +84,70 @@ contract Multicall {
         uint256 accountLastVoted;
     }
 
+    struct SystemOverview {
+        // Revenue Router
+        address revenueRouter;
+        uint256 revenueRouterWethBalance;
+
+        // Voter
+        address voterAddress;
+        uint256 voterTotalClaimable;
+        uint256 totalWeight;
+        uint256 bribeSplit;
+
+        // Governance Token
+        address governanceToken;
+        uint256 governanceTokenTotalSupply;
+        address underlyingToken;
+        uint8 underlyingTokenDecimals;
+        string underlyingTokenSymbol;
+
+        // Epoch timing
+        uint256 currentEpochStart;
+        uint256 nextEpochStart;
+        uint256 timeUntilNextEpoch;
+        uint256 epochDuration;
+
+        // Strategy count
+        uint256 strategyCount;
+    }
+
+    struct StrategyOverview {
+        // Strategy info
+        address strategy;
+        address bribe;
+        address bribeRouter;
+        address paymentToken;
+        string paymentTokenSymbol;
+        uint8 paymentTokenDecimals;
+        bool isAlive;
+
+        // WETH in strategy
+        uint256 strategyWethBalance;
+        uint256 strategyClaimable;
+        uint256 strategyPendingRevenue;
+        uint256 strategyTotalPotentialWeth;
+
+        // Strategy tokens in bribe router
+        uint256 bribeRouterTokenBalance;
+
+        // Strategy tokens in bribe contract
+        uint256 bribeTokensLeft;
+        uint256 bribeTotalSupply;
+
+        // Voting
+        uint256 strategyWeight;
+        uint256 votePercent;
+
+        // Auction info
+        uint256 epochId;
+        uint256 epochPeriod;
+        uint256 startTime;
+        uint256 initPrice;
+        uint256 currentPrice;
+        uint256 timeUntilAuctionEnd;
+    }
+
     /*----------  CONSTRUCTOR  ------------------------------------------*/
 
     constructor(address _voter) {
@@ -247,6 +311,129 @@ contract Multicall {
         return dataArray;
     }
 
+    /*----------  SYSTEM OVERVIEW FUNCTIONS  ----------------------------*/
+
+    uint256 private constant DURATION = 7 days;
+
+    function getSystemOverview() external view returns (SystemOverview memory data) {
+        // Revenue Router
+        data.revenueRouter = IVoter(voter).revenueSource();
+        address revenueToken = IVoter(voter).revenueToken();
+        data.revenueRouterWethBalance = IERC20(revenueToken).balanceOf(data.revenueRouter);
+
+        // Voter
+        data.voterAddress = voter;
+        data.totalWeight = IVoter(voter).totalWeight();
+        data.bribeSplit = IVoter(voter).bribeSplit();
+
+        // Calculate total claimable across all strategies
+        uint256 length = IVoter(voter).length();
+        data.strategyCount = length;
+        uint256 totalClaimable = 0;
+        for (uint256 i = 0; i < length; i++) {
+            address strategy = IVoter(voter).strategies(i);
+            totalClaimable += IVoter(voter).strategy_Claimable(strategy);
+        }
+        data.voterTotalClaimable = totalClaimable;
+
+        // Governance Token
+        data.governanceToken = IVoter(voter).governanceToken();
+        data.governanceTokenTotalSupply = IGovernanceToken(data.governanceToken).totalSupply();
+        data.underlyingToken = IGovernanceToken(data.governanceToken).token();
+        data.underlyingTokenDecimals = IERC20Metadata(data.underlyingToken).decimals();
+        data.underlyingTokenSymbol = IERC20Metadata(data.underlyingToken).symbol();
+
+        // Epoch timing (voting epochs are 7 days)
+        data.epochDuration = DURATION;
+        data.currentEpochStart = (block.timestamp / DURATION) * DURATION;
+        data.nextEpochStart = data.currentEpochStart + DURATION;
+        data.timeUntilNextEpoch = data.nextEpochStart - block.timestamp;
+
+        return data;
+    }
+
+    function getStrategyOverview(address strategy) public view returns (StrategyOverview memory data) {
+        data.strategy = strategy;
+        data.bribe = IVoter(voter).strategy_Bribe(strategy);
+        data.bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
+        data.paymentToken = IVoter(voter).strategy_PaymentToken(strategy);
+        data.paymentTokenSymbol = IERC20Metadata(data.paymentToken).symbol();
+        data.paymentTokenDecimals = IERC20Metadata(data.paymentToken).decimals();
+        data.isAlive = IVoter(voter).strategy_IsAlive(strategy);
+
+        // WETH balances
+        data.strategyWethBalance = IStrategy(strategy).getRevenueBalance();
+        data.strategyClaimable = IVoter(voter).strategy_Claimable(strategy);
+        data.strategyPendingRevenue = IVoter(voter).getStrategyPendingRevenue(strategy);
+
+        // Calculate router portion of pending WETH
+        address revenueSource = IVoter(voter).revenueSource();
+        address revenueToken = IVoter(voter).revenueToken();
+        uint256 routerBalance = IERC20(revenueToken).balanceOf(revenueSource);
+        uint256 totalWeight = IVoter(voter).totalWeight();
+        uint256 strategyWeight = IVoter(voter).strategy_Weight(strategy);
+        uint256 routerPortion = totalWeight == 0 ? 0 : (routerBalance * strategyWeight) / totalWeight;
+        data.strategyTotalPotentialWeth = data.strategyWethBalance + data.strategyClaimable + data.strategyPendingRevenue + routerPortion;
+
+        // Strategy tokens in bribe router
+        data.bribeRouterTokenBalance = IERC20(data.paymentToken).balanceOf(data.bribeRouter);
+
+        // Strategy tokens in bribe contract (what's left to distribute)
+        address[] memory rewardTokens = IBribe(data.bribe).getRewardTokens();
+        for (uint256 i = 0; i < rewardTokens.length; i++) {
+            if (rewardTokens[i] == data.paymentToken) {
+                data.bribeTokensLeft = IBribe(data.bribe).left(data.paymentToken);
+                break;
+            }
+        }
+        data.bribeTotalSupply = IBribe(data.bribe).totalSupply();
+
+        // Voting info
+        data.strategyWeight = strategyWeight;
+        data.votePercent = totalWeight == 0 ? 0 : (100 * strategyWeight * 1e18) / totalWeight;
+
+        // Auction info
+        data.epochId = IStrategy(strategy).epochId();
+        data.epochPeriod = IStrategy(strategy).epochPeriod();
+        data.startTime = IStrategy(strategy).startTime();
+        data.initPrice = IStrategy(strategy).initPrice();
+        data.currentPrice = IStrategy(strategy).getPrice();
+
+        // Time until auction epoch ends
+        uint256 auctionEnd = data.startTime + data.epochPeriod;
+        data.timeUntilAuctionEnd = block.timestamp >= auctionEnd ? 0 : auctionEnd - block.timestamp;
+
+        return data;
+    }
+
+    function getAllStrategyOverviews() external view returns (StrategyOverview[] memory) {
+        uint256 length = IVoter(voter).length();
+        StrategyOverview[] memory dataArray = new StrategyOverview[](length);
+        for (uint256 i = 0; i < length; i++) {
+            address strategy = IVoter(voter).strategies(i);
+            dataArray[i] = getStrategyOverview(strategy);
+        }
+        return dataArray;
+    }
+
+    function getFullSystemView() external view returns (
+        SystemOverview memory system,
+        StrategyOverview[] memory strategies
+    ) {
+        // Get system overview
+        system = this.getSystemOverview();
+
+        // Get all strategy overviews
+        uint256 length = IVoter(voter).length();
+        strategies = new StrategyOverview[](length);
+        for (uint256 i = 0; i < length; i++) {
+            address strategy = IVoter(voter).strategies(i);
+            strategies[i] = getStrategyOverview(strategy);
+        }
+
+        return (system, strategies);
+    }
+
     /*----------  HELPER FUNCTIONS  -------------------------------------*/
 
     function getStrategies() external view returns (address[] memory) {
@@ -272,6 +459,31 @@ contract Multicall {
     /// @notice Distributes pending revenue to all strategies
     function distributeAll() external {
         IVoter(voter).distributeAll();
+    }
+
+    /// @notice Flushes revenue router and distributes to all strategies and bribes
+    /// @dev Use this to move the protocol along without buying
+    function flushAndDistributeAll() external {
+        // Flush revenue from router to voter if available
+        address revenueSource = IVoter(voter).revenueSource();
+        IRevenueRouter(revenueSource).flushIfAvailable();
+
+        // Distribute all pending revenue to all strategies
+        IVoter(voter).distributeAll();
+
+        // Distribute bribe router rewards for all strategies
+        uint256 length = IVoter(voter).length();
+        for (uint256 i = 0; i < length; i++) {
+            address strategy = IVoter(voter).strategies(i);
+            address paymentToken = IVoter(voter).strategy_PaymentToken(strategy);
+            address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
+
+            // Bribe.notifyRewardAmount requires reward >= DURATION (604800)
+            uint256 bribeBalance = IERC20(paymentToken).balanceOf(bribeRouter);
+            if (bribeBalance >= 604800) {
+                IBribeRouter(bribeRouter).distribute();
+            }
+        }
     }
 
     /*----------  BUY FUNCTIONS  ----------------------------------------*/
