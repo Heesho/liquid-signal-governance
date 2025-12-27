@@ -27,7 +27,7 @@ const STRATEGY_FACTORY = "0x6C561686394C5915b877b60aC442aD7aa81F5726";
 const GOVERNANCE_TOKEN = "0xC78B6e362cB0f48b59E573dfe7C99d92153a16d3";
 const VOTER = "0x9C5Cf3246d7142cdAeBBD5f653d95ACB73DdabA6";
 const REVENUE_ROUTER = "0x4cDF668bFa0563C9D0fc5D5bD33191f0a2aE2571";
-const MULTICALL = "0x41eA22dF0174cF3Cc09B1469a95D604E1833a462";
+const MULTICALL = "0xdaB6BD3473cC29893f768D695B3214D2d5567B2f";
 
 // STRATEGY 0
 // Buy DONUT and send to DAO
@@ -613,7 +613,7 @@ async function main() {
   // await verifyGovernanceToken();
   // await verifyVoter();
   // await verifyRevenueRouter();
-  // await verifyMulticall();
+  await verifyMulticall();
   // console.log("Core Contracts Verified");
 
   //===================================================================
