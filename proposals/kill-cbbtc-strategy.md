@@ -1,30 +1,82 @@
-# How to Submit the Kill cbBTC Strategy Proposal
+# cbBTC Strategy Precision Analysis & Proposal
 
-This guide walks you through creating a governance proposal to kill (deactivate) the cbBTC accumulation strategy due to a precision bug that makes rewards unclaimable.
+This document analyzes the precision issues with the cbBTC accumulation strategy and provides a proposal to address them.
 
 ---
 
-## Background: Why Kill This Strategy?
+## Background: cbBTC Precision Issues
 
-The cbBTC strategy has a critical precision issue:
+The cbBTC strategy has precision issues due to cbBTC's 8 decimal places:
 
 1. **cbBTC has only 8 decimals** (vs 18 for most tokens)
 2. **Small bribe amounts result in `rewardRate = 1`** (1 unit per second)
-3. **When totalSupply is large**, the `rewardPerToken` calculation rounds to 0:
-   ```
-   rewardPerToken = time * rewardRate * 1e18 / totalSupply
-   ```
-   If `rewardRate * 1e18 * DURATION < totalSupply`, rewardPerToken stays at 0
-4. **Result**: Bribe rewards are permanently stuck and unclaimable
+3. **Rewards accrue very slowly** - `rewardPerToken` stays at 0 for several days
+4. **~34% of small bribes are lost** to precision truncation
 
-Until a solution is found (e.g., a wrapped cbBTC with more decimals), this strategy should be killed to:
-- Prevent users from voting for a broken strategy
-- Stop revenue from being allocated to it
-- Send any pending revenue to the treasury instead
+### Test Results (with 0.00818777 cbBTC bribe, ~270K gDONUT totalSupply)
+
+| Time Elapsed | rewardPerToken | Can Users Claim? |
+|--------------|----------------|------------------|
+| Day 1-3 | 0 | ❌ No - earned() shows 0 |
+| Day 4-6 | 1 | ✅ Yes - partial rewards |
+| Day 7 | 2 | ✅ Yes - full rewards |
+
+### Minimum Voting Balance Required
+
+| Balance | Earned After 7 Days | Approx USD Value |
+|---------|--------------------|--------------------|
+| < 0.5 gDONUT | 0 (cannot claim) | $0 |
+| 0.5 gDONUT | 0.00000001 cbBTC | $0.001 |
+| 10 gDONUT | 0.0000002 cbBTC | $0.02 |
+| 100 gDONUT | 0.000002 cbBTC | $0.20 |
+| 1,000 gDONUT | 0.00002 cbBTC | $2 |
+| 10,000 gDONUT | 0.0002 cbBTC | $20 |
+| 105,000 gDONUT | 0.0021 cbBTC | $210 |
+
+**Minimum to earn anything: 0.5 gDONUT**
+**Minimum to cover gas costs: ~1,000+ gDONUT**
+
+### Precision Loss Breakdown
+
+- **Original bribe:** 818,777 units (0.00818777 cbBTC)
+- **After rewardRate truncation:** 604,800 units (lost 26%)
+- **After distribution rounding:** ~540,000 units claimable (lost additional 8%)
+- **Total loss:** ~34% of original bribe
 
 ---
 
-## Before You Start
+## Decision: Kill or Keep?
+
+### Arguments for Killing the Strategy
+
+1. **Small voters (< 0.5 gDONUT) earn nothing** - unfair distribution
+2. **34% precision loss** on small bribes - inefficient use of bribes
+3. **Multi-day delay** before rewards appear - confusing UX
+4. **APR shows 0** on frontend - misleading
+
+### Arguments for Keeping the Strategy
+
+1. **Rewards ARE claimable** after ~4 days (not permanently stuck)
+2. **Most voters (0.5+ gDONUT) can claim** something
+3. **Larger bribes work better** - precision loss decreases with size
+4. **Can fix with minimum bribe requirements** instead of killing
+
+### Recommendation
+
+**Option A: Keep the strategy** but:
+- Fix frontend APR calculation
+- Add minimum bribe amount warning (~0.1 cbBTC recommended)
+- Document the precision limitations
+
+**Option B: Kill the strategy** and:
+- Re-add later with a wrapped cbBTC (18 decimals)
+- Or implement minimum bribe requirements in the contract
+
+---
+
+## If You Decide to Kill: Proposal Instructions
+
+### Before You Start
 
 **You will need:**
 - A web browser (Chrome, Firefox, etc.)
@@ -79,35 +131,42 @@ Click on the **Body** field and paste this exactly:
 ```
 ## Problem
 
-The cbBTC bribe contract has a critical precision issue that makes rewards unclaimable.
+The cbBTC bribe contract has precision issues due to cbBTC's 8 decimal places.
 
 **Technical Details:**
 - cbBTC has 8 decimals (not 18 like most tokens)
 - Small bribe amounts (e.g., 0.008 cbBTC) result in `rewardRate = 1`
-- When bribe totalSupply is large, the `rewardPerToken` calculation rounds to 0:
-  - `rewardPerToken = time * rewardRate * 1e18 / totalSupply`
-  - If `rewardRate * 1e18 * DURATION < totalSupply`, result is 0 (integer division)
-- When `rewardPerToken = 0`, all users see `earned() = 0`
-- Bribe tokens are permanently stuck in the contract
+- With low rewardRate, `rewardPerToken` stays at 0 for several days
+- ~34% of small bribes are lost to precision truncation
+- Voters with < 0.5 gDONUT cannot earn any rewards
+
+**Test Results (0.00818777 cbBTC bribe, ~270K gDONUT totalSupply):**
+- Days 1-3: rewardPerToken = 0, no one can claim
+- Days 4-6: rewardPerToken = 1, partial rewards claimable
+- Day 7: rewardPerToken = 2, full rewards claimable
+- Total claimable: ~66% of original bribe (34% lost to precision)
 
 **Impact:**
-- 0.00818777 cbBTC currently stuck in bribe contract
-- All future cbBTC bribes would also be stuck
-- Users voting for this strategy cannot claim rewards
+- Small voters (< 0.5 gDONUT) earn nothing
+- Multi-day delay before rewards appear
+- APR shows 0 on frontend (misleading)
+- ~34% of small bribes lost to rounding
 
 ## Proposed Action
 
 Execute `killStrategy()` on the Voter contract to:
 1. Mark the cbBTC strategy as inactive (`strategy_IsAlive = false`)
-2. Send any pending revenue to the DAO treasury
+2. Send any pending WETH revenue to the DAO treasury
 3. Prevent new votes from being allocated to this strategy
 
-## Future Fix
+Note: Current cbBTC bribes in the contract will still be claimable by existing voters after the 7-day period.
 
-A new cbBTC strategy can be added once we have a solution, such as:
+## Future Considerations
+
+A new cbBTC strategy could be added with:
 - A wrapped cbBTC token with 18 decimals
-- Minimum bribe amount requirements
-- Modified bribe contract with better precision handling
+- Minimum bribe amount requirements (recommend 0.1+ cbBTC)
+- Frontend warnings about precision limitations
 
 ## Technical Details
 
@@ -295,8 +354,13 @@ After killing:
 
 ---
 
-## Note About Stuck cbBTC
+## Note About Current cbBTC Bribe
 
-The ~0.008 cbBTC currently stuck in the bribe contract cannot be recovered. There is no admin rescue function. This is an unfortunate loss, but killing the strategy prevents future losses.
+The ~0.008 cbBTC currently in the bribe contract is **NOT permanently stuck**:
 
-If the strategy is re-added in the future with a fix, new bribes would work correctly, but the currently stuck funds would remain stuck.
+- **~66% (~0.0054 cbBTC) is claimable** by voters after the 7-day distribution period
+- **~34% (~0.0028 cbBTC) is lost** to precision truncation (cannot be recovered)
+- Voters need at least **0.5 gDONUT** to earn any rewards
+- Rewards will appear in `earned()` starting around **day 4**
+
+Killing the strategy does NOT affect the current bribe distribution - it only prevents new revenue from being allocated to this strategy.
