@@ -10,12 +10,11 @@ The cbBTC strategy has a critical precision issue:
 
 1. **cbBTC has only 8 decimals** (vs 18 for most tokens)
 2. **Small bribe amounts result in `rewardRate = 1`** (1 unit per second)
-3. **With ~27M gDONUT voting**, the `rewardPerToken` calculation rounds to 0:
+3. **When totalSupply is large**, the `rewardPerToken` calculation rounds to 0:
    ```
    rewardPerToken = time * rewardRate * 1e18 / totalSupply
-                  = 604800 * 1 * 1e18 / 2.7e25
-                  = 0 (integer division)
    ```
+   If `rewardRate * 1e18 * DURATION < totalSupply`, rewardPerToken stays at 0
 4. **Result**: Bribe rewards are permanently stuck and unclaimable
 
 Until a solution is found (e.g., a wrapped cbBTC with more decimals), this strategy should be killed to:
@@ -85,9 +84,9 @@ The cbBTC bribe contract has a critical precision issue that makes rewards uncla
 **Technical Details:**
 - cbBTC has 8 decimals (not 18 like most tokens)
 - Small bribe amounts (e.g., 0.008 cbBTC) result in `rewardRate = 1`
-- With ~27M gDONUT totalSupply, the `rewardPerToken` calculation:
+- When bribe totalSupply is large, the `rewardPerToken` calculation rounds to 0:
   - `rewardPerToken = time * rewardRate * 1e18 / totalSupply`
-  - `= 604800 * 1 * 1e18 / 2.7e25 = 0` (integer division)
+  - If `rewardRate * 1e18 * DURATION < totalSupply`, result is 0 (integer division)
 - When `rewardPerToken = 0`, all users see `earned() = 0`
 - Bribe tokens are permanently stuck in the contract
 
