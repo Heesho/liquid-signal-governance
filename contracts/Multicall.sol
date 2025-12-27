@@ -478,9 +478,9 @@ contract Multicall {
             address paymentToken = IVoter(voter).strategy_PaymentToken(strategy);
             address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
 
-            // Bribe.notifyRewardAmount requires reward >= DURATION (604800)
+            // Require minimum bribe for reasonable precision (rewardRate >= 10)
             uint256 bribeBalance = IERC20(paymentToken).balanceOf(bribeRouter);
-            if (bribeBalance >= 604800) {
+            if (bribeBalance >= 6000000) {
                 IBribeRouter(bribeRouter).distribute();
             }
         }
@@ -522,10 +522,10 @@ contract Multicall {
         paymentAmount = IStrategy(strategy).buy(msg.sender, epochId, deadline, maxPaymentAmount);
 
         // Distribute bribe router rewards to bribe contract (only if above minimum)
-        // Bribe.notifyRewardAmount requires reward >= DURATION (604800)
+        // Require minimum bribe for reasonable precision (rewardRate >= 10)
         address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
         uint256 bribeBalance = IERC20(paymentToken).balanceOf(bribeRouter);
-        if (bribeBalance >= 604800) {
+        if (bribeBalance >= 6000000) {
             IBribeRouter(bribeRouter).distribute();
         }
 
@@ -572,10 +572,10 @@ contract Multicall {
         paymentAmount = IStrategy(strategy).buy(msg.sender, epochId, deadline, maxPaymentAmount);
 
         // Distribute bribe router rewards to bribe contract (only if above minimum)
-        // Bribe.notifyRewardAmount requires reward >= DURATION (604800)
+        // Require minimum bribe for reasonable precision (rewardRate >= 10)
         address bribeRouter = IVoter(voter).strategy_BribeRouter(strategy);
         uint256 bribeBalance = IERC20(paymentToken).balanceOf(bribeRouter);
-        if (bribeBalance >= 604800) {
+        if (bribeBalance >= 6000000) {
             IBribeRouter(bribeRouter).distribute();
         }
 
