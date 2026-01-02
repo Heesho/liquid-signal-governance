@@ -1,80 +1,53 @@
-# cbBTC Strategy Precision Analysis & Proposal
+# Kill cbBTC Strategy Proposal
 
-This document analyzes the precision issues with the cbBTC accumulation strategy and provides a proposal to address them.
-
----
-
-## Background: cbBTC Precision Issues
-
-The cbBTC strategy has precision issues due to cbBTC's 8 decimal places:
-
-1. **cbBTC has only 8 decimals** (vs 18 for most tokens)
-2. **Small bribe amounts result in `rewardRate = 1`** (1 unit per second)
-3. **Rewards accrue very slowly** - `rewardPerToken` stays at 0 for several days
-4. **~34% of small bribes are lost** to precision truncation
-
-### Test Results (with 0.00818777 cbBTC bribe, ~270K gDONUT totalSupply)
-
-| Time Elapsed | rewardPerToken | Can Users Claim? |
-|--------------|----------------|------------------|
-| Day 1-3 | 0 | ❌ No - earned() shows 0 |
-| Day 4-6 | 1 | ✅ Yes - partial rewards |
-| Day 7 | 2 | ✅ Yes - full rewards |
-
-### Minimum Voting Balance Required
-
-| Balance | Earned After 7 Days | Approx USD Value |
-|---------|--------------------|--------------------|
-| < 0.5 gDONUT | 0 (cannot claim) | $0 |
-| 0.5 gDONUT | 0.00000001 cbBTC | $0.001 |
-| 10 gDONUT | 0.0000002 cbBTC | $0.02 |
-| 100 gDONUT | 0.000002 cbBTC | $0.20 |
-| 1,000 gDONUT | 0.00002 cbBTC | $2 |
-| 10,000 gDONUT | 0.0002 cbBTC | $20 |
-| 105,000 gDONUT | 0.0021 cbBTC | $210 |
-
-**Minimum to earn anything: 0.5 gDONUT**
-**Minimum to cover gas costs: ~1,000+ gDONUT**
-
-### Precision Loss Breakdown
-
-- **Original bribe:** 818,777 units (0.00818777 cbBTC)
-- **After rewardRate truncation:** 604,800 units (lost 26%)
-- **After distribution rounding:** ~540,000 units claimable (lost additional 8%)
-- **Total loss:** ~34% of original bribe
+This proposal kills the cbBTC accumulation strategy due to a precision bug that prevents voters from claiming rewards.
 
 ---
 
-## Decision: Kill or Keep?
+## The Problem
 
-### Arguments for Killing the Strategy
+cbBTC uses 8 decimal places instead of the standard 18. Combined with BTC's high price (~$100k), the reward amounts are so small that they round to zero in the bribe distribution math.
 
-1. **Small voters (< 0.5 gDONUT) earn nothing** - unfair distribution
-2. **34% precision loss** on small bribes - inefficient use of bribes
-3. **Multi-day delay** before rewards appear - confusing UX
-4. **APR shows 0** on frontend - misleading
+**Real-world result:** Voters have been unable to claim any cbBTC rewards even after 7+ days of voting.
 
-### Arguments for Keeping the Strategy
+### Why This Happens
 
-1. **Rewards ARE claimable** after ~4 days (not permanently stuck)
-2. **Most voters (0.5+ gDONUT) can claim** something
-3. **Larger bribes work better** - precision loss decreases with size
-4. **Can fix with minimum bribe requirements** instead of killing
+1. **cbBTC has only 8 decimals** (vs 18 for most tokens - USDC works at 6 decimals because 1 USDC = $1, but 1 cbBTC = $100k)
+2. **Small bribe amounts result in `rewardRate = 1`** (1 unit per second = 0.00000001 cbBTC/sec)
+3. **rewardPerToken stays at 0** - the math truncates to zero before any rewards can accrue
+4. **Bribes are effectively stuck** - earned() returns 0 for all voters regardless of balance
 
-### Recommendation
+### What Voters Experience
 
-**Option A: Keep the strategy** but:
-- Fix frontend APR calculation
-- Add minimum bribe amount warning (~0.1 cbBTC recommended)
-- Document the precision limitations
+| Time Since Vote | What Happens |
+|-----------------|--------------|
+| Day 1-7+ | `earned()` shows 0, nothing to claim |
+| After 7+ days | Still 0 - even large voters cannot claim anything |
 
-**Option B: Kill the strategy** and:
-- Re-add later with a wrapped cbBTC (18 decimals)
-- Or implement minimum bribe requirements in the contract
+### The Math Problem
+
+With a typical bribe (~0.008 cbBTC) and current voting supply:
+- **rewardRate** = bribe ÷ 604800 seconds = ~1 unit/sec
+- **rewardPerToken** = rewardRate × time ÷ totalSupply = rounds to 0
+- **earned** = balance × rewardPerToken = 0
+
+The numbers are just too small. USDC works at 6 decimals because $1 = 1 USDC. But cbBTC at 8 decimals with BTC at $100k means the smallest unit is worth $0.001 - and when you divide that across voters and time, you get rounding errors that eat the entire reward.
 
 ---
 
-## If You Decide to Kill: Proposal Instructions
+## Solution
+
+Kill this strategy and replace with an 18-decimal BTC alternative:
+- **Morpho BTC vault** - yield-generating, 18 decimals
+- **Aave aBTC** - yield-generating, 18 decimals
+- **Gauntlet BTC vault** - managed strategy, 18 decimals
+- **cbBTC-DONUT LP** - earns fees + deepens DONUT liquidity, 18 decimals
+
+These are actually better than raw cbBTC since they generate yield instead of sitting idle.
+
+---
+
+## Proposal Instructions
 
 ### Before You Start
 
@@ -121,7 +94,7 @@ Kill cbBTC Accumulation Strategy
 Click on the **Summary** field and paste this exactly:
 
 ```
-Deactivate the cbBTC accumulation strategy due to a precision bug. cbBTC's 8 decimal places cause bribe rewards to be permanently stuck when the voting supply is large. Users cannot claim their earned cbBTC bribes. This proposal kills the strategy until a fix is implemented.
+Deactivate the cbBTC accumulation strategy due to a fatal precision bug. cbBTC's 8 decimal places combined with BTC's high price cause all reward calculations to round to zero. No voters have been able to claim any rewards even after 7+ days. This proposal kills the strategy so we can replace it with an 18-decimal alternative.
 ```
 
 ### Body
@@ -131,26 +104,20 @@ Click on the **Body** field and paste this exactly:
 ```
 ## Problem
 
-The cbBTC bribe contract has precision issues due to cbBTC's 8 decimal places.
+The cbBTC bribe contract has a fatal precision bug. No voters have been able to claim any rewards, even after 7+ days.
 
-**Technical Details:**
+**Why it's broken:**
 - cbBTC has 8 decimals (not 18 like most tokens)
-- Small bribe amounts (e.g., 0.008 cbBTC) result in `rewardRate = 1`
-- With low rewardRate, `rewardPerToken` stays at 0 for several days
-- ~34% of small bribes are lost to precision truncation
-- Voters with < 0.5 gDONUT cannot earn any rewards
+- BTC price is ~$100k, so the smallest cbBTC unit (0.00000001) = $0.001
+- When you divide tiny reward amounts across voters and time, it rounds to zero
+- `earned()` shows 0 for ALL voters, regardless of voting power
 
-**Test Results (0.00818777 cbBTC bribe, ~270K gDONUT totalSupply):**
-- Days 1-3: rewardPerToken = 0, no one can claim
-- Days 4-6: rewardPerToken = 1, partial rewards claimable
-- Day 7: rewardPerToken = 2, full rewards claimable
-- Total claimable: ~66% of original bribe (34% lost to precision)
+**Real-world result:**
+- Voters waited 7+ days: earned = 0
+- Large voters waited 7+ days: earned = 0
+- The math just doesn't work at this decimal precision + price level
 
-**Impact:**
-- Small voters (< 0.5 gDONUT) earn nothing
-- Multi-day delay before rewards appear
-- APR shows 0 on frontend (misleading)
-- ~34% of small bribes lost to rounding
+USDC works at 6 decimals because $1 = 1 USDC. cbBTC fails at 8 decimals because the BTC price makes the numbers too small to survive the division.
 
 ## Proposed Action
 
@@ -159,14 +126,17 @@ Execute `killStrategy()` on the Voter contract to:
 2. Send any pending WETH revenue to the DAO treasury
 3. Prevent new votes from being allocated to this strategy
 
-Note: Current cbBTC bribes in the contract will still be claimable by existing voters after the 7-day period.
+Note: cbBTC bribes currently in the contract are effectively stuck due to the precision bug.
 
 ## Future Considerations
 
-A new cbBTC strategy could be added with:
-- A wrapped cbBTC token with 18 decimals
-- Minimum bribe amount requirements (recommend 0.1+ cbBTC)
-- Frontend warnings about precision limitations
+BTC exposure could be re-added using 18-decimal alternatives:
+- Morpho BTC vaults (yield-generating)
+- Aave aBTC (yield-generating)
+- Gauntlet BTC vault
+- cbBTC-DONUT LP tokens
+
+These are actually better than raw cbBTC since they generate yield instead of sitting idle.
 
 ## Technical Details
 
@@ -354,13 +324,11 @@ After killing:
 
 ---
 
-## Note About Current cbBTC Bribe
+## What Happens After Killing
 
-The ~0.008 cbBTC currently in the bribe contract is **NOT permanently stuck**:
+- **Existing votes:** Users can still reset their votes (required to unstake)
+- **Pending bribes:** cbBTC in the bribe contract is effectively stuck (precision bug means earned = 0)
+- **Future revenue:** Will no longer be allocated to this strategy
+- **New votes:** Cannot be cast for this strategy
 
-- **~66% (~0.0054 cbBTC) is claimable** by voters after the 7-day distribution period
-- **~34% (~0.0028 cbBTC) is lost** to precision truncation (cannot be recovered)
-- Voters need at least **0.5 gDONUT** to earn any rewards
-- Rewards will appear in `earned()` starting around **day 4**
-
-Killing the strategy does NOT affect the current bribe distribution - it only prevents new revenue from being allocated to this strategy.
+BTC exposure can be re-added later using 18-decimal alternatives like Morpho BTC vaults, Aave aBTC, Gauntlet BTC, or cbBTC-DONUT LP tokens.
